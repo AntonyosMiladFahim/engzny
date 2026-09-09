@@ -14,7 +14,7 @@ export default function App() {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ num1: 1, num2: 1 })
+                body: JSON.stringify({ num1: 3, num2: 5 })
             });
             const data = await response.json();
             if (response.ok) {

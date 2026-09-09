@@ -19,7 +19,7 @@ app.get('/api/health', (req, res) => {
 app.post('/api/calculate', (req, res) => {
     const { num1, num2 } = req.body;
     if (typeof num1 === 'number' && typeof num2 === 'number') {
-        res.json({ answer: num1 + num2, message: `The server calculated: ${num1} + ${num2} = ${num1 + num2}` });
+        res.json({ answer: num1 + num2, message: `The server calculated: ${num1} + ${num2} = ${num1 * num2}` });
     } else {
         res.status(400).json({ error: 'Please provide two numbers (num1 and num2)' });
     }
