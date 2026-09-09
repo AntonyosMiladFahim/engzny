@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+const authRoutes = require('./_routes/_auth');
+
 const app = express();
 
 // Middleware
@@ -14,6 +16,9 @@ app.get('/api/health', (req, res) => {
         status: 'ok', message: 'Vercel Serverless API is operational!'
     });
 });
+
+// Feature routers
+app.use('/api/auth', authRoutes);
 
 // ⚠️ Vercel expects the app to be exported.
 // For local development, we listen on the port from your environment.
