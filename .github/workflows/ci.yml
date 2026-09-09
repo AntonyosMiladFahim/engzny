@@ -1,0 +1,78 @@
+# CI gate for pull requests into main.
+#
+# Every PR targeting main must install cleanly, pass the unit tests, and produce a
+# Vite build. Any non-zero exit from any step fails the job, and a failed job blocks
+# the merge once this workflow is marked as a required status check in the branch
+# protection rules for main (Settings -> Branches -> main -> Require status checks
+# -> add "CI / test-and-build").
+
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    # opened / synchronize / reopened are the defaults; ready_for_review makes a
+    # draft that's promoted re-run even if no new commits were pushed.
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# Least privilege: the job only needs to read the repo.
+permissions:
+  contents: read
+
+# Three engineers pushing in parallel: when a PR gets a new commit, cancel the
+# run for its previous commit so runners aren't wasted on stale code.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Makes test runners (vitest/jest) run once and exit instead of entering watch
+  # mode, and disables interactive prompts from tooling.
+  CI: true
+  NODE_ENV: test
+
+jobs:
+  test-and-build:
+    name: test-and-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # Caches ~/.npm keyed on package-lock.json for faster installs.
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        # npm ci is the CI form of npm install: it installs exactly what
+        # package-lock.json pins and fails if the lockfile is out of sync with
+        # package.json, which catches "works on my machine" dependency drift.
+        run: npm ci
+
+      - name: Run unit tests
+        # Fails the job (and therefore the PR check) on any failing test.
+        run: npm run test
+
+      - name: Build (Vite)
+        # Fails the job if the Vite compilation crashes.
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Upload build artifact
+        # Only reached if tests and build both passed. Lets reviewers download
+        # the exact bundle the PR produces without building locally.
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.event.pull_request.number }}-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
