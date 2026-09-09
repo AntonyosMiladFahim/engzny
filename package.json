@@ -1,0 +1,48 @@
+{
+  "name": "engzny",
+  "version": "1.0.0",
+  "description": "WhatsApp Voice Note Summarizer",
+  "main": "index.js",
+  "scripts": {
+    "dev:frontend": "vite",
+    "dev:backend": "nodemon api/index.js",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build": "vite build",
+    "start": "node api/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AntonyosMiladFahim/engzny.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/AntonyosMiladFahim/engzny/issues"
+  },
+  "homepage": "https://github.com/AntonyosMiladFahim/engzny#readme",
+  "dependencies": {
+    "@google/generative-ai": "^0.1.1",
+    "axios": "^1.6.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "framer-motion": "^10.16.4",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^0.292.0",
+    "mongoose": "^8.0.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.18.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.1.0",
+    "autoprefixer": "^10.4.16",
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.0.1",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.3.5",
+    "vite": "^4.5.0"
+  }
+}
