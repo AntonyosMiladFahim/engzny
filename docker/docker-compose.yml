@@ -1,0 +1,82 @@
+# Local infrastructure for the WhatsApp SaaS: WAHA (WhatsApp HTTP API) + MongoDB.
+#
+# Usage (from the repo root):
+#   docker compose -f docker/docker-compose.yml up -d
+#   docker compose -f docker/docker-compose.yml ps        # shows health status
+#   docker compose -f docker/docker-compose.yml down      # data volumes are kept
+#
+# Override any ${VAR:-default} below with a docker/.env file or shell env vars.
+
+name: engzny-local
+
+services:
+  waha:
+    image: devlikeapro/waha:latest
+    container_name: engzny-waha
+    restart: unless-stopped
+    ports:
+      - "${WAHA_PORT:-3000}:3000"
+    environment:
+      # Protect the REST API and the dashboard (change these for anything non-local).
+      WHATSAPP_API_KEY: ${WAHA_API_KEY:-local-dev-api-key}
+      WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:-admin}
+      # Engine: WEBJS (default, full feature set) or NOWEB (lighter, no Chromium).
+      WHATSAPP_DEFAULT_ENGINE: ${WAHA_ENGINE:-WEBJS}
+      # Bring every persisted tenant session back up automatically after a restart.
+      WHATSAPP_RESTART_ALL_SESSIONS: "True"
+      WHATSAPP_START_SESSION: ""
+      # Don't dump QR codes into container logs; use the dashboard / API instead.
+      WAHA_PRINT_QR: "False"
+      WAHA_LOG_FORMAT: ${WAHA_LOG_FORMAT:-PRETTY}
+      WAHA_LOG_LEVEL: ${WAHA_LOG_LEVEL:-info}
+      TZ: ${TZ:-UTC}
+    volumes:
+      # CRITICAL: multi-tenant WhatsApp sessions must survive container restarts/recreates.
+      - ./waha-data:/waha/.sessions
+      # Downloaded media (images, voice notes, documents) received via WhatsApp.
+      - ./waha-media:/app/.media
+    healthcheck:
+      # WAHA exposes GET /health; the image is Node-based, so use node instead of curl/wget.
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://127.0.0.1:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - engzny-net
+
+  mongo:
+    image: mongo:7
+    container_name: engzny-mongo
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-root}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-engzny}
+    volumes:
+      - ./mongo-data:/data/db
+      - ./mongo-config:/data/configdb
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "mongosh --quiet --eval \"db.adminCommand('ping').ok\" | grep -q 1"
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - engzny-net
+
+networks:
+  engzny-net:
+    driver: bridge

@@ -1,0 +1,9 @@
+# Bind-mounted runtime data. WhatsApp session files contain live auth credentials
+# for every tenant and must never be committed.
+waha-data/
+waha-media/
+mongo-data/
+mongo-config/
+
+# Local overrides for the ${VAR:-default} values in docker-compose.yml
+.env
