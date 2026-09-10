@@ -1,8 +1,8 @@
 # Local infrastructure for the WhatsApp SaaS: WAHA (WhatsApp HTTP API),
-# exposed to the internet through a Cloudflare Tunnel (no router port forwarding).
+# exposed to the internet through an Ngrok Tunnel.
 #
 # Usage (from the repo root):
-#   cp docker/.env.example docker/.env      # then fill in CLOUDFLARE_TUNNEL_TOKEN
+#   cp docker/.env.example docker/.env      # then fill in NGROK variables
 #   docker compose -f docker/docker-compose.yml up -d
 #   docker compose -f docker/docker-compose.yml ps        # shows health status
 #   docker compose -f docker/docker-compose.yml down      # data volumes are kept
@@ -11,10 +11,8 @@
 # substitutes every ${VAR} / ${VAR:-default} below.
 #
 # Traffic flow:
-#   Internet -> Cloudflare edge -> cloudflared -> http://waha:3000        (inbound API)
-#   waha -> http://host.docker.internal:5000/api/waha/webhook             (outbound webhooks
-#                                                                          to the backend
-#                                                                          running on the host)
+#   Internet -> Ngrok Edge -> engzny-ngrok -> http://waha:3000        (inbound API)
+#   waha -> https://engzny-kappa.vercel.app/api/waha/webhook          (outbound webhooks)
 
 name: engzny-local
 
@@ -24,7 +22,7 @@ services:
     container_name: engzny-waha
     restart: unless-stopped
     ports:
-      # Bound to loopback only: the public entry point is the Cloudflare Tunnel,
+      # Bound to loopback only: the public entry point is the Ngrok Tunnel,
       # so WAHA is never reachable from the LAN directly.
       - "127.0.0.1:${WAHA_PORT:-3000}:3000"
     environment:
@@ -47,10 +45,8 @@ services:
       WAHA_LOG_LEVEL: ${WAHA_LOG_LEVEL:-info}
       TZ: ${TZ:-UTC}
 
-      # --- Global webhook: deliver events to the backend running on the HOST machine ---
-      # host.docker.internal is resolved via extra_hosts below, so this works on
-      # Docker Desktop (Windows/macOS) and on plain Linux Docker Engine alike.
-      WHATSAPP_HOOK_URL: ${WAHA_WEBHOOK_URL:-http://host.docker.internal:5000/api/waha/webhook}
+      # --- Global webhook: deliver events to the backend ---
+      WHATSAPP_HOOK_URL: ${WAHA_WEBHOOK_URL}
       # Comma-separated event list. Use "*" to receive everything.
       WHATSAPP_HOOK_EVENTS: ${WAHA_WEBHOOK_EVENTS:-message,message.any,message.ack,message.reaction,session.status,state.change,group.join,group.leave}
       # Retry policy for webhook delivery when the backend is down / restarting.
@@ -60,9 +56,6 @@ services:
       # verify they really came from WAHA. Leave empty to disable.
       WHATSAPP_HOOK_HMAC_KEY: ${WAHA_WEBHOOK_HMAC_KEY:-}
     extra_hosts:
-      # Maps host.docker.internal to the Docker host's gateway IP on every platform.
-      # On Docker Desktop this alias already exists; on Linux this line is what makes
-      # the container able to hit the host machine's port 5000.
       - "host.docker.internal:host-gateway"
     volumes:
       # CRITICAL: multi-tenant WhatsApp sessions must survive container restarts/recreates.
@@ -70,10 +63,6 @@ services:
       # Downloaded media (images, voice notes, documents) received via WhatsApp.
       - ./waha-media:/app/.media
     healthcheck:
-      # WAHA exposes GET /health, but once WHATSAPP_API_KEY is set that endpoint is
-      # protected too (401 without the key). The probe runs inside the container, so it
-      # reads the key from the container's own environment and sends it as X-Api-Key.
-      # The image is Node-based, so node is used instead of curl/wget.
       test:
         - "CMD"
         - "node"
@@ -83,39 +72,20 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-      # Probe every 5s during start_period so the container flips to healthy quickly.
       start_interval: 5s
     networks:
       - engzny-net
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: engzny-cloudflared
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: engzny-ngrok
     restart: unless-stopped
-    # The tunnel token comes from docker/.env (CLOUDFLARE_TUNNEL_TOKEN). The ":?" form
-    # makes `docker compose up` fail fast with a clear message if it is missing.
-    #
-    # Route the public hostname to WAHA in the Cloudflare Zero Trust dashboard:
-    #   Networks -> Tunnels -> <tunnel> -> Public Hostname -> Service: http://waha:3000
-    # (cloudflared resolves "waha" over the shared Docker network, no host ports needed.)
-    #
-    # --metrics enables the local /ready endpoint used by the health check.
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?Set NGROK_AUTHTOKEN in docker/.env}
     command:
-      - tunnel
-      - --no-autoupdate
-      - --metrics
-      - 0.0.0.0:2000
-      - run
-      - --token
-      - ${CLOUDFLARE_TUNNEL_TOKEN:?Set CLOUDFLARE_TUNNEL_TOKEN in docker/.env}
-    healthcheck:
-      # The image is distroless (no shell/curl); cloudflared ships its own readiness probe
-      # which returns 0 only once the tunnel has active connections to the Cloudflare edge.
-      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      - "http"
+      - "--url=${NGROK_DOMAIN:?Set NGROK_DOMAIN in docker/.env}"
+      - "waha:3000"
     depends_on:
       waha:
         condition: service_healthy
