@@ -202,7 +202,12 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
             const { chats = [], hasMore: more = false, connected: conn = false } = res.data;
             setConnected(conn);
             setWahaChats((prev) => append ? [...prev, ...chats] : chats);
-            setHasMore(more);
+            // Relax the heuristic: show "Load more" as long as this page
+            // returned at least one row. The previous `=== limit` check was
+            // too strict — WAHA may return fewer rows than the page size even
+            // when more exist (e.g. filtered out on their end). The button
+            // will naturally disappear once a page returns 0 rows.
+            setHasMore(chats.length > 0);
             setOffset(pageOffset + chats.length);
         } catch {
             setConnected(false);
