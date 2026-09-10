@@ -2,11 +2,35 @@ import React from 'react';
 import { LogOut } from 'lucide-react';
 import Brand from '../auth/Brand';
 import FolderList from './FolderList';
+import ContactList from './ContactList';
 import ConnectionPill from './ConnectionPill';
 import UserChip from '../shell/UserChip';
 import cx from '../ui/cx';
 
-export default function Sidebar({ folders, activeId, onSelect, loading, totalCount, connection, user, onLogout, className }) {
+/**
+ * Desktop rail: brand, the two navigation sections (Folders, then Contacts),
+ * then the connection + account footer pinned to the bottom.
+ *
+ * The scroller carries a top/bottom mask so long contact lists dissolve into
+ * the rail instead of being guillotined by its edge — the same trick a native
+ * sidebar uses to signal "there is more here".
+ */
+export default function Sidebar({
+    folders,
+    activeId,
+    onSelect,
+    loading,
+    totalCount,
+    contacts,
+    activeContactId,
+    onSelectContact,
+    contactsLoading,
+    contactsError,
+    connection,
+    user,
+    onLogout,
+    className,
+}) {
     return (
         <aside
             className={cx(
@@ -18,13 +42,32 @@ export default function Sidebar({ folders, activeId, onSelect, loading, totalCou
                 <Brand compact />
             </div>
 
-            <div className="mt-8 flex-1 overflow-y-auto pr-1 [scrollbar-width:thin]">
+            <div
+                className="mt-8 flex-1 overflow-y-auto pr-1 [scrollbar-width:thin]"
+                style={{
+                    maskImage: 'linear-gradient(to bottom, transparent 0, black 14px, black calc(100% - 20px), transparent 100%)',
+                    WebkitMaskImage:
+                        'linear-gradient(to bottom, transparent 0, black 14px, black calc(100% - 20px), transparent 100%)',
+                }}
+            >
                 <FolderList
                     folders={folders}
                     activeId={activeId}
                     onSelect={onSelect}
                     loading={loading}
                     totalCount={totalCount}
+                    suspended={Boolean(activeContactId)}
+                    layoutGroup="sidebar"
+                />
+
+                <div aria-hidden="true" className="mx-3 mt-7 h-px bg-gradient-to-r from-white/[0.09] via-white/[0.04] to-transparent" />
+
+                <ContactList
+                    contacts={contacts}
+                    activeId={activeContactId}
+                    onSelect={onSelectContact}
+                    loading={contactsLoading}
+                    error={contactsError}
                     layoutGroup="sidebar"
                 />
             </div>

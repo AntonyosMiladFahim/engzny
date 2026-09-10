@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
 import useTilt from '../../hooks/useTilt';
 import cx from '../ui/cx';
+import Highlight from '../ui/Highlight';
 import { collapse, riseSoft, SPRING_SNAPPY } from '../motion';
 import { formatDuration, formatRelative, initials, waveformFor } from '../format';
 
@@ -10,15 +11,30 @@ import { formatDuration, formatRelative, initials, waveformFor } from '../format
  * A voice-note summary card. Weight is communicated through motion: a
  * pointer-driven 3.5° tilt with a following sheen (desktop only), a 3px lift
  * on hover and a 0.8% compress on press.
+ *
+ * `query` is the live deep-search term; matches are marked in the sender line
+ * and the summary. A card that only matched deep inside a long summary also
+ * auto-expands its clamp so the reason it survived the filter is visible
+ * without a click.
  */
-export default function NoteCard({ note, expanded = false, onToggle }) {
+export default function NoteCard({ note, expanded = false, onToggle, query = '' }) {
     const reduce = useReducedMotion();
     const tilt = useTilt();
     const bars = useMemo(() => waveformFor(note.id, 22), [note.id]);
     const hasMore = Boolean(note.transcript) || (note.summary?.length ?? 0) > 180;
 
+    const term = query.trim();
+    // Clamping hides the hit when the match sits past the third line.
+    const matchedDeep = useMemo(() => {
+        if (term.length < 2) return false;
+        const head = (note.summary ?? '').slice(0, 140).toLowerCase();
+        return (note.summary ?? '').toLowerCase().includes(term.toLowerCase()) && !head.includes(term.toLowerCase());
+    }, [note.summary, term]);
+    const open = expanded || matchedDeep;
+
     return (
         <motion.article
+            layout={reduce ? false : 'position'}
             variants={riseSoft}
             {...tilt.handlers}
             style={tilt.style}
@@ -38,7 +54,9 @@ export default function NoteCard({ note, expanded = false, onToggle }) {
                     {initials(note.sender)}
                 </span>
                 <div className="min-w-0 flex-1 leading-tight">
-                    <p className="truncate text-[14px] font-bold text-fog-50">{note.sender}</p>
+                    <p className="truncate text-[14px] font-bold text-fog-50">
+                        <Highlight text={note.sender} query={term} />
+                    </p>
                     <p className="mt-0.5 truncate font-mono text-[11px] text-fog-500">
                         {formatRelative(note.createdAt)}
                         {note.folderName && <span className="text-fog-600"> · {note.folderName}</span>}
@@ -52,9 +70,17 @@ export default function NoteCard({ note, expanded = false, onToggle }) {
             </header>
 
             <div className="relative mt-4 flex-1">
-                {note.title && <p className="mb-1 text-[15px] font-bold tracking-[-0.01em] text-fog-50">{note.title}</p>}
-                <p className={cx('text-[14px] leading-relaxed text-fog-200', !expanded && 'line-clamp-3')}>
-                    {note.summary || <em className="not-italic text-fog-500">Summary pending…</em>}
+                {note.title && (
+                    <p className="mb-1 text-[15px] font-bold tracking-[-0.01em] text-fog-50">
+                        <Highlight text={note.title} query={term} />
+                    </p>
+                )}
+                <p className={cx('text-[14px] leading-relaxed text-fog-200', !open && 'line-clamp-3')}>
+                    {note.summary ? (
+                        <Highlight text={note.summary} query={term} />
+                    ) : (
+                        <em className="not-italic text-fog-500">Summary pending…</em>
+                    )}
                 </p>
 
                 <AnimatePresence initial={false}>
@@ -62,7 +88,9 @@ export default function NoteCard({ note, expanded = false, onToggle }) {
                         <motion.div key="transcript" {...collapse} className="overflow-hidden">
                             <div className="mt-4 border-t border-white/[0.06] pt-3">
                                 <p className="eyebrow mb-1.5">Transcript</p>
-                                <p className="text-[13px] leading-relaxed text-fog-400">{note.transcript}</p>
+                                <p className="text-[13px] leading-relaxed text-fog-400">
+                                    <Highlight text={note.transcript} query={term} />
+                                </p>
                             </div>
                         </motion.div>
                     )}
