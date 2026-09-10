@@ -195,11 +195,24 @@ export default function Dashboard() {
     const variants = reduce ? undefined : stagger(reveal ? 0.25 : 0.04, 0.05);
 
     // ── Keyboard shortcut: ⌘K / / to focus search ────────────────────────
+    //
+    // When the user triggers the search shortcut (or the mobile search button)
+    // we CLEAR the senderId and folderId URL params before focusing. This
+    // ensures every search is global — never silently scoped to one contact
+    // or folder that the user may have forgotten is active.
     const focusSearch = useCallback(() => {
-        searchRef.current?.focus();
-        searchRef.current?.select?.();
-        searchRef.current?.scrollIntoView?.({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
-    }, [reduce]);
+        // Transition to global scope if any filter is active.
+        if (senderId || folderId) {
+            setParams({}, { replace: true });
+        }
+        // Give React one tick to re-render the (now-visible) search input
+        // before we focus it, so the ref is attached.
+        requestAnimationFrame(() => {
+            searchRef.current?.focus();
+            searchRef.current?.select?.();
+            searchRef.current?.scrollIntoView?.({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+        });
+    }, [senderId, folderId, setParams, reduce]);
 
     useEffect(() => {
         const onKey = (e) => {
@@ -223,10 +236,16 @@ export default function Dashboard() {
 
     /**
      * Whether the main area shows the chat list or the note timeline.
-     * The chat list is the root surface; a selected senderId zooms in.
-     * A selected folderId also leaves ChatList (for "All notes" in folder mode).
+     * The chat list is the root surface; a selected senderId or folderId
+     * zooms into a scoped timeline.
+     *
+     * `showSearch` is deliberately decoupled: the search bar is visible
+     * whenever we are in a timeline OR the user has already typed a query.
+     * This means a global-search session (query present, no sender/folder)
+     * keeps the search bar rendered even though `inChatTimeline` is false.
      */
     const inChatTimeline = Boolean(senderId || folderId);
+    const showSearch     = inChatTimeline || Boolean(query.trim());
 
     const scopeLabel = activeContact
         ? activeContact.name
@@ -359,8 +378,9 @@ export default function Dashboard() {
                                 )}
                             </div>
 
-                            {/* Search bar — only shown in the chat timeline / folder view */}
-                            {inChatTimeline && (
+                            {/* Search bar — shown in the chat timeline, folder view, OR when
+                                  a global query is already active (showSearch keeps it visible). */}
+                            {showSearch && (
                                 <motion.div variants={riseSoft} className="flex w-full items-center gap-3 sm:w-auto">
                                     <label className="group relative flex h-11 w-full items-center sm:w-[300px]">
                                         <span className="sr-only">Search notes</span>
@@ -373,7 +393,15 @@ export default function Dashboard() {
                                             ref={searchRef}
                                             type="search"
                                             value={query}
-                                            onChange={(e) => setQuery(e.target.value)}
+                                            onChange={(e) => {
+                                                const next = e.target.value;
+                                                // The moment the user starts typing, clear any active
+                                                // contact / folder scope so the search is global.
+                                                if (next.trim() && (senderId || folderId)) {
+                                                    setParams({}, { replace: true });
+                                                }
+                                                setQuery(next);
+                                            }}
                                             placeholder={
                                                 activeContact
                                                     ? `Search ${activeContact.name}'s notes`

@@ -284,35 +284,41 @@ async function wahaWebhook(req, res) {
 /**
  * GET /api/waha/chats   (requireAuth)
  *
- * Returns the active WhatsApp chats for the authenticated user's session,
+ * Returns a page of active WhatsApp chats for the authenticated user's session,
  * projected to the minimal shape the share-routing modal needs:
  *
  *   { id, name, picture, lastMessage: { body, timestamp } | null }
  *
- * Design decisions:
- *   - Empty array (not an error) when the session does not exist or is not yet
- *     WORKING. The modal renders a "Link WhatsApp first" callout in that case.
- *   - `picture` may be null even for existing chats (privacy settings); the UI
- *     falls back to an initials badge.
- *   - We limit to 50 rows by default (via the helper) to bound lambda memory.
+ * Pagination is controlled by two query params forwarded to WAHA:
+ *   ?limit=25   — page size (default 25, capped at 100)
+ *   ?offset=0   — zero-based offset (default 0)
+ *
+ * The response includes a `hasMore` boolean: true when the returned page is
+ * exactly `limit` rows long (meaning WAHA may have more). This avoids a
+ * second count query and lets the modal decide cheaply whether to show the
+ * "Load more" button.
  *
  * Response:
- *   200 { chats: [...], connected: true }
- *   200 { chats: [],   connected: false }   – session absent / not WORKING
- *   502 { message }                          – WAHA unreachable
+ *   200 { chats: [...], hasMore: bool, limit, offset, connected: true }
+ *   200 { chats: [],    hasMore: false, connected: false }  – not WORKING
+ *   502 { message }                                          – WAHA unreachable
  */
 async function getChats(req, res) {
     const sessionName = sessionNameFor(req);
+
+    // Parse and clamp pagination params.
+    const limit  = Math.min(100, Math.max(1, Number.parseInt(req.query.limit,  10) || 25));
+    const offset = Math.max(0,              Number.parseInt(req.query.offset, 10) || 0);
 
     try {
         // Fast-path: if the session is not WORKING the chats endpoint would
         // return an empty list anyway — we skip the second round-trip.
         const session = await waha.getSession(sessionName);
         if (!session || session.status !== SessionStatus.WORKING) {
-            return res.status(200).json({ chats: [], connected: false });
+            return res.status(200).json({ chats: [], hasMore: false, connected: false });
         }
 
-        const raw = await waha.getChats(sessionName);
+        const raw = await waha.getChats(sessionName, limit, offset);
 
         const chats = (Array.isArray(raw) ? raw : []).map((c) => ({
             // Stable grouping key — same id format as senderId on VoiceNote.
@@ -330,7 +336,12 @@ async function getChats(req, res) {
                 : null,
         })).filter((c) => c.id);
 
-        return res.status(200).json({ chats, connected: true });
+        // `hasMore` is a cheap heuristic: if we got exactly `limit` rows back
+        // there is likely at least one more page. WAHA doesn't expose a total
+        // count, so we err on the side of showing the button.
+        const hasMore = chats.length === limit;
+
+        return res.status(200).json({ chats, hasMore, limit, offset, connected: true });
     } catch (err) {
         return handleError(res, err, 'getChats');
     }

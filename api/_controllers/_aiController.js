@@ -107,23 +107,25 @@ function extractSender(payload = {}) {
 async function generateSummary(mimeType, base64Data) {
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' });
 
-    const prompt = `
-You are an expert multilingual transcription and summarization assistant.
-Listen to the audio and respond with ONLY a JSON object — no text before or after it, no markdown, no code fences.
+    const prompt = [
+        'Listen to the audio and identify the language being spoken.',
+        'Transcribe it and summarize it.',
+        'You MUST respond entirely in the ORIGINAL LANGUAGE spoken in the audio — never in English unless the audio itself is in English.',
+        '',
+        'Return your response as a strict JSON object with exactly two keys:',
+        '  "transcript" — the verbatim words spoken, in the original language.',
+        '  "summary"    — a concise summary (2–5 sentences) of the main point, in the original language.',
+        '',
+        'Rules:',
+        '  - Do NOT wrap the response in markdown code blocks like ```json.',
+        '  - Do NOT add any English labels, headers, or wrapper text.',
+        '  - Do NOT use markdown formatting (**, __, >, #, or lists) inside the values.',
+        '  - If the audio is inaudible or empty, set both values to an empty string.',
+        '',
+        'Respond with ONLY the JSON object. Example:',
+        '{"transcript":"…verbatim words in original language…","summary":"…concise summary in original language…"}',
+    ].join('\n');
 
-The JSON must have exactly these two keys:
-  "transcript": the verbatim words spoken, preserved in the original language (Arabic, English, or mixed — do not translate).
-  "summary":    a concise summary (2–5 sentences) of the main point, written in the same language as the speaker.
-
-Rules you MUST follow:
-  - Do NOT use any markdown syntax (no **, __, >, #, or - lists).
-  - Do NOT add English wrapper text like "Here is the transcript:", "Transcription:", "Summary:", etc.
-  - Do NOT translate the content into English if it was spoken in Arabic.
-  - If the audio is inaudible or empty, set both keys to an empty string.
-
-Respond with only the JSON object. Example format:
-{"transcript":"…verbatim words…","summary":"…concise summary…"}
-`.trim();
 
     const result = await model.generateContent([
         prompt,
