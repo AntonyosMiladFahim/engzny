@@ -365,16 +365,55 @@ export default function NoteCard({
                 </AnimatePresence>
             </div>
 
-            {/* ── Footer: waveform + player ─────────────────────────────── */}
+            {/*   Footer: player + waveform + tags   */}
             <footer className="relative mt-4 flex items-center gap-3">
-                {/*
-                  * Waveform — takes all remaining space. The progress sweep
-                  * and pulsing bars live inside this container.
-                  *
-                  * The Play/Pause button is a SIBLING flex item (not absolute)
-                  * so it occupies its own physical width and cannot overlap
-                  * the rightmost waveform bars.
-                  */}
+                {/* 1. The Play Button (Moved OUTSIDE the waveform div) */}
+                {note.hasAudio && (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            toggleAudio();
+                        }}
+                        aria-label={isPlaying ? 'Pause voice note' : 'Play voice note'}
+                        className={cx(
+                            'relative grid h-8 w-8 shrink-0 place-items-center rounded-full',
+                            'shadow-hairline outline-none transition-[transform,background-color,box-shadow] duration-150 ease-snap',
+                            'focus-visible:ring-2 focus-visible:ring-signal-400/60',
+                            isPlaying
+                                ? 'scale-105 bg-signal-400 text-ink-950 shadow-signal-sm'
+                                : 'bg-white/[0.07] text-fog-300 hover:scale-105 hover:bg-signal-400/[0.15] hover:text-signal-300 group-hover:bg-white/[0.10]'
+                        )}
+                    >
+                        <AnimatePresence mode="wait" initial={false}>
+                            {isPlaying ? (
+                                <motion.span
+                                    key="pause"
+                                    initial={reduce ? false : { scale: 0.6, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    exit={reduce ? undefined : { scale: 0.6, opacity: 0 }}
+                                    transition={{ duration: 0.1 }}
+                                    className="grid place-items-center"
+                                >
+                                    <Pause aria-hidden="true" className="h-3.5 w-3.5 fill-current" strokeWidth={0} />
+                                </motion.span>
+                            ) : (
+                                <motion.span
+                                    key="play"
+                                    initial={reduce ? false : { scale: 0.6, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    exit={reduce ? undefined : { scale: 0.6, opacity: 0 }}
+                                    transition={{ duration: 0.1 }}
+                                    className="grid place-items-center"
+                                >
+                                    <Play aria-hidden="true" className="h-3.5 w-3.5 translate-x-[1px] fill-current" strokeWidth={0} />
+                                </motion.span>
+                            )}
+                        </AnimatePresence>
+                    </button>
+                )}
+
+                {/* 2. The Waveform */}
                 <div className="relative flex h-7 flex-1 items-center gap-[3px]" aria-hidden="true">
                     {/* Progress sweep */}
                     {isPlaying && (
@@ -384,7 +423,6 @@ export default function NoteCard({
                             transition={{ duration: 0.15, ease: 'linear' }}
                         />
                     )}
-
                     {bars.map((h, i) => (
                         <motion.span
                             key={i}
@@ -416,71 +454,7 @@ export default function NoteCard({
                     ))}
                 </div>
 
-                {/* Play / Pause — sibling flex item, NOT absolute, so it sits
-                    cleanly beside the waveform and doesn't clip the bars. */}
-                {note.hasAudio && (
-                    <button
-                        type="button"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            toggleAudio();
-                        }}
-                        aria-label={
-                            isLoading ? 'Loading audio…'
-                            : isPlaying ? 'Pause voice note'
-                            : 'Play voice note'
-                        }
-                        disabled={isLoading}
-                        className={cx(
-                            'grid h-7 w-7 shrink-0 place-items-center rounded-full',
-                            'shadow-hairline outline-none transition-[transform,background-color,box-shadow] duration-150 ease-snap',
-                            'focus-visible:ring-2 focus-visible:ring-signal-400/60',
-                            isLoading && 'cursor-wait',
-                            !isLoading && isPlaying
-                                ? 'scale-105 bg-signal-400 text-ink-950 shadow-signal-sm'
-                                : 'bg-white/[0.07] text-fog-300 hover:scale-105 hover:bg-signal-400/[0.15] hover:text-signal-300 group-hover:bg-white/[0.10]'
-                        )}
-                    >
-                        <AnimatePresence mode="wait" initial={false}>
-                            {isLoading ? (
-                                <motion.span
-                                    key="loading"
-                                    initial={reduce ? false : { scale: 0.6, opacity: 0 }}
-                                    animate={{ scale: 1, opacity: 1 }}
-                                    exit={reduce ? undefined : { scale: 0.6, opacity: 0 }}
-                                    transition={{ duration: 0.1 }}
-                                    className="grid place-items-center"
-                                >
-                                    {/* Inline spinner matching the card's glassmorphism */}
-                                    <span className="h-3.5 w-3.5 animate-spin-slow rounded-full border-2 border-fog-600/40 border-t-signal-400" />
-                                </motion.span>
-                            ) : isPlaying ? (
-                                <motion.span
-                                    key="pause"
-                                    initial={reduce ? false : { scale: 0.6, opacity: 0 }}
-                                    animate={{ scale: 1, opacity: 1 }}
-                                    exit={reduce ? undefined : { scale: 0.6, opacity: 0 }}
-                                    transition={{ duration: 0.1 }}
-                                    className="grid place-items-center"
-                                >
-                                    <Pause aria-hidden="true" className="h-3.5 w-3.5 fill-current" strokeWidth={0} />
-                                </motion.span>
-                            ) : (
-                                <motion.span
-                                    key="play"
-                                    initial={reduce ? false : { scale: 0.6, opacity: 0 }}
-                                    animate={{ scale: 1, opacity: 1 }}
-                                    exit={reduce ? undefined : { scale: 0.6, opacity: 0 }}
-                                    transition={{ duration: 0.1 }}
-                                    className="grid place-items-center"
-                                >
-                                    <Play aria-hidden="true" className="h-3.5 w-3.5 translate-x-[1px] fill-current" strokeWidth={0} />
-                                </motion.span>
-                            )}
-                        </AnimatePresence>
-                    </button>
-                )}
-
+                {/* 3. Tags & Chevron */}
                 {note.tags.slice(0, 2).map((t) => (
                     <span key={t} className="rounded-md bg-verdigris-400/10 px-2 py-0.5 font-mono text-[10.5px] text-verdigris-300">
                         {t}
@@ -500,6 +474,7 @@ export default function NoteCard({
                     </button>
                 )}
             </footer>
+
         </motion.article>
     );
 }
