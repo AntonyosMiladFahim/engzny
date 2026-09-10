@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#181C23"/><stop offset="1" stop-color="#0B0D10"/></linearGradient></defs>
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#bg)"/>
+  <rect x="24.5" y="24.5" width="463" height="463" rx="111.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.09"/>
+  <!-- reticle corners -->
+  <g fill="none" stroke="#C9F04A" stroke-width="18" stroke-linecap="round">
+    <path d="M136 200v-40q0-24 24-24h40"/><path d="M376 200v-40q0-24-24-24h-40"/>
+    <path d="M136 312v40q0 24 24 24h40"/><path d="M376 312v40q0 24-24 24h-40"/>
+  </g>
+  <!-- QR hint -->
+  <g fill="#E9ECF1">
+    <rect x="200" y="200" width="40" height="40" rx="6"/><rect x="272" y="200" width="40" height="40" rx="6"/>
+    <rect x="200" y="272" width="40" height="40" rx="6"/><rect x="272" y="272" width="16" height="16" rx="3"/><rect x="296" y="296" width="16" height="16" rx="3"/>
+  </g>
+</svg>

@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json.schemastore.org/web-manifest-combined.json",
+  "id": "/",
+  "name": "engzny — voice notes, already read",
+  "short_name": "engzny",
+  "description": "Forward a WhatsApp voice note; read the gist seconds later. Summaries filed into folders you control, on your own WAHA instance.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "/dashboard?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "theme_color": "#0B0D10",
+  "background_color": "#070809",
+  "categories": ["productivity", "utilities"],
+  "prefer_related_applications": false,
+  "handle_links": "preferred",
+  "launch_handler": {
+    "client_mode": ["navigate-existing", "auto"]
+  },
+
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/monochrome-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "monochrome"
+    }
+  ],
+
+  "screenshots": [
+    {
+      "src": "/screenshots/dashboard-wide.png",
+      "sizes": "1440x900",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Your library: voice-note summaries filed by folder"
+    },
+    {
+      "src": "/screenshots/connect-wide.png",
+      "sizes": "1440x900",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Link WhatsApp by scanning the pairing code"
+    },
+    {
+      "src": "/screenshots/dashboard-narrow.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Summaries on your phone, sorted by sender and folder"
+    },
+    {
+      "src": "/screenshots/connect-narrow.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Pair your phone in three steps"
+    }
+  ],
+
+  "shortcuts": [
+    {
+      "name": "All notes",
+      "short_name": "Notes",
+      "description": "Open your library",
+      "url": "/dashboard?source=shortcut",
+      "icons": [{ "src": "/icons/shortcut-notes.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Connect WhatsApp",
+      "short_name": "Connect",
+      "description": "Link or re-link your phone",
+      "url": "/connect?source=shortcut",
+      "icons": [{ "src": "/icons/shortcut-connect.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
+
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "audio",
+          "accept": [
+            "audio/*",
+            "audio/ogg",
+            "audio/opus",
+            "audio/mpeg",
+            "audio/mp4",
+            "audio/aac",
+            "audio/amr",
+            "audio/wav",
+            "audio/webm",
+            "video/ogg",
+            ".ogg",
+            ".oga",
+            ".opus",
+            ".mp3",
+            ".m4a",
+            ".aac",
+            ".amr",
+            ".wav",
+            ".weba"
+          ]
+        }
+      ]
+    }
+  },
+
+  "file_handlers": [
+    {
+      "action": "/dashboard?source=file",
+      "accept": {
+        "audio/ogg": [".ogg", ".oga", ".opus"],
+        "audio/mpeg": [".mp3"],
+        "audio/mp4": [".m4a"],
+        "audio/aac": [".aac"],
+        "audio/amr": [".amr"],
+        "audio/wav": [".wav"],
+        "audio/webm": [".weba"]
+      },
+      "launch_type": "single-client"
+    }
+  ]
+}

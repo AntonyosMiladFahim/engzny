@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#14181E"/><stop offset="1" stop-color="#0B0D10"/></linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#DDF77E"/><stop offset="1" stop-color="#B5E02F"/></linearGradient>
+  </defs>
+  <!-- full bleed; glyph kept inside the 80% safe zone -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g fill="url(#bar)">
+    <rect x="150" y="226" width="34" height="60" rx="17"/>
+    <rect x="204" y="186" width="34" height="140" rx="17"/>
+    <rect x="258" y="150" width="34" height="212" rx="17"/>
+    <rect x="312" y="202" width="34" height="108" rx="17"/>
+    <rect x="366" y="240" width="20" height="32" rx="10" transform="translate(-20 0)"/>
+  </g>
+</svg>
