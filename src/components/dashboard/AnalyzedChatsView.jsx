@@ -10,7 +10,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Calendar, CheckCircle2, Clock, AlertCircle, Loader2, Mic, Play, Pause, Search, Sparkles, X, RefreshCw } from 'lucide-react';
+import { Calendar, CheckCircle2, Clock, AlertCircle, Loader2, MessageSquare, Mic, Play, Pause, Search, Sparkles, X, RefreshCw, FileText } from 'lucide-react';
 import { useBatchAnalyses, useBatchDetail } from '../../hooks/useLibrary';
 import { initials } from '../format';
 import { SPRING_SNAPPY } from '../motion';
@@ -53,7 +53,7 @@ function StatusBadge({ status, processed, total }) {
         return (
             <span className="inline-flex items-center gap-1 rounded-full bg-verdigris-400/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-verdigris-300 ring-1 ring-verdigris-400/30">
                 <CheckCircle2 className="h-3 w-3" />
-                Completed ({processed} notes)
+                Completed ({processed} items)
             </span>
         );
     }
@@ -65,10 +65,11 @@ function StatusBadge({ status, processed, total }) {
     );
 }
 
-function AudioMessageCard({ note, search }) {
+function MessageCard({ note, search }) {
     const [isPlaying, setIsPlaying] = useState(false);
     const [viewMode, setViewMode] = useState('summary'); // 'summary' | 'transcript'
     const audioRef = React.useRef(null);
+    const isAudio = note.messageType === 'audio' || Boolean(note.originalAudioUrl);
 
     const togglePlay = () => {
         if (!audioRef.current) return;
@@ -94,35 +95,45 @@ function AudioMessageCard({ note, search }) {
             animate={{ opacity: 1, y: 0 }}
             className="glass relative flex flex-col gap-3 rounded-2xl p-4 shadow-hairline transition-all hover:bg-white/[0.04]"
         >
-            <audio
-                ref={audioRef}
-                src={note.originalAudioUrl}
-                onEnded={() => setIsPlaying(false)}
-                onPause={() => setIsPlaying(false)}
-            />
+            {isAudio && note.originalAudioUrl && (
+                <audio
+                    ref={audioRef}
+                    src={note.originalAudioUrl}
+                    onEnded={() => setIsPlaying(false)}
+                    onPause={() => setIsPlaying(false)}
+                />
+            )}
 
-            {/* Header: Sender & Time & Audio controls */}
+            {/* Header: Sender & Time & Type Badge */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                     <Avatar name={note.sender} size={36} />
                     <div>
-                        <h4 className="text-[13.5px] font-bold text-fog-50">{note.sender}</h4>
+                        <div className="flex items-center gap-2">
+                            <h4 className="text-[13.5px] font-bold text-fog-50">{note.sender}</h4>
+                            <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-mono uppercase text-fog-400">
+                                {isAudio ? <Mic className="h-3 w-3 text-signal-400" /> : <MessageSquare className="h-3 w-3 text-verdigris-300" />}
+                                {isAudio ? 'Voice Note' : 'Text'}
+                            </span>
+                        </div>
                         <span className="font-mono text-[10.5px] text-fog-500">{formattedTime}</span>
                     </div>
                 </div>
 
-                {/* Audio Play Button */}
-                <button
-                    type="button"
-                    onClick={togglePlay}
-                    className="flex h-9 items-center gap-2 rounded-xl bg-signal-400/10 px-3 text-[12.5px] font-bold text-signal-400 hover:bg-signal-400/20"
-                >
-                    {isPlaying ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current" />}
-                    <span>{isPlaying ? 'Pause Audio' : 'Listen Note'}</span>
-                </button>
+                {/* Audio Play Button (if audio) */}
+                {isAudio && note.originalAudioUrl && (
+                    <button
+                        type="button"
+                        onClick={togglePlay}
+                        className="flex h-9 items-center gap-2 rounded-xl bg-signal-400/10 px-3 text-[12.5px] font-bold text-signal-400 hover:bg-signal-400/20"
+                    >
+                        {isPlaying ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current" />}
+                        <span>{isPlaying ? 'Pause Audio' : 'Listen Note'}</span>
+                    </button>
+                )}
             </div>
 
-            {/* View Toggle: Summary vs Full Transcript */}
+            {/* View Toggle: Summary vs Full Message / Transcript */}
             <div className="flex items-center gap-2 border-t border-white/[0.06] pt-3">
                 <button
                     type="button"
@@ -143,7 +154,7 @@ function AudioMessageCard({ note, search }) {
                             viewMode === 'transcript' ? 'bg-white/[0.09] text-fog-50' : 'text-fog-400 hover:text-fog-200'
                         )}
                     >
-                        Full Transcription
+                        {isAudio ? 'Full Transcription' : 'Full Message'}
                     </button>
                 )}
             </div>
@@ -284,6 +295,24 @@ export default function AnalyzedChatsView({ onOpenAnalyzeModal }) {
                             </div>
                         </div>
 
+                        {/* Overall Chat Conversation Summary Banner */}
+                        {batch.overallSummary ? (
+                            <div className="rounded-3xl bg-gradient-to-r from-signal-400/[0.12] via-signal-400/[0.06] to-transparent p-5 ring-1 ring-signal-400/25">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <Sparkles className="h-5 w-5 text-signal-400" />
+                                    <h3 className="text-[15px] font-bold text-fog-50">Overall Conversation Summary</h3>
+                                </div>
+                                <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-fog-100">
+                                    {batch.overallSummary}
+                                </p>
+                            </div>
+                        ) : batch.status === 'processing' ? (
+                            <div className="rounded-2xl bg-signal-400/10 p-4 text-[13px] text-signal-300 flex items-center gap-3">
+                                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                                <span>Generating overall conversation summary as messages download in background…</span>
+                            </div>
+                        ) : null}
+
                         {/* Chat Deep Search Bar */}
                         <div className="relative">
                             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fog-500" />
@@ -291,7 +320,7 @@ export default function AnalyzedChatsView({ onOpenAnalyzeModal }) {
                                 type="search"
                                 value={chatQuery}
                                 onChange={(e) => setChatQuery(e.target.value)}
-                                placeholder={`Search inside ${batch.chatName}'s analyzed notes…`}
+                                placeholder={`Search inside ${batch.chatName}'s analyzed content…`}
                                 className="h-11 w-full rounded-2xl bg-ink-900/80 pl-10 pr-9 text-[14px] text-fog-50 outline-none ring-1 ring-white/[0.08] focus:ring-signal-400/70"
                             />
                             {chatQuery && (
@@ -305,7 +334,7 @@ export default function AnalyzedChatsView({ onOpenAnalyzeModal }) {
                             )}
                         </div>
 
-                        {/* Audio Notes Timeline */}
+                        {/* Messages & Audio Notes Timeline */}
                         {detailLoading && notes.length === 0 ? (
                             <div className="space-y-3 py-6">
                                 {[1, 2, 3].map((i) => (
@@ -315,20 +344,20 @@ export default function AnalyzedChatsView({ onOpenAnalyzeModal }) {
                         ) : filteredNotes.length === 0 ? (
                             <div className="rounded-3xl border border-dashed border-white/10 p-12 text-center text-fog-400">
                                 {chatQuery ? (
-                                    <p>No voice notes in this chat match "{chatQuery}".</p>
+                                    <p>No content in this chat matches "{chatQuery}".</p>
                                 ) : batch.status === 'processing' ? (
                                     <div className="flex flex-col items-center gap-2">
                                         <Loader2 className="h-6 w-6 animate-spin text-signal-400" />
-                                        <p>Downloading and transcribing voice notes in background…</p>
+                                        <p>Downloading and transcribing chat content in background…</p>
                                     </div>
                                 ) : (
-                                    <p>No voice notes found in this chat for the selected date range.</p>
+                                    <p>No text or voice notes found in this chat for the selected date range.</p>
                                 )}
                             </div>
                         ) : (
                             <div className="space-y-4">
                                 {filteredNotes.map((note) => (
-                                    <AudioMessageCard key={note.id} note={note} search={chatQuery} />
+                                    <MessageCard key={note.id} note={note} search={chatQuery} />
                                 ))}
                             </div>
                         )}

@@ -330,92 +330,94 @@ export default function BulkAnalyzeModal({ open, onClose, onLaunchSuccess }) {
 
                 {/* Step 2: Date & Time Selection */}
                 {step === 2 && (
-                    <div className="flex min-h-0 flex-1 flex-col p-6 space-y-6 overflow-y-auto">
-                        {/* Selected Chat Header Pill */}
-                        <div className="flex items-center gap-3 rounded-2xl bg-white/[0.04] p-3.5 ring-1 ring-white/[0.08]">
-                            <Avatar name={selectedChat.name} picture={selectedChat.picture} size={40} />
-                            <div className="min-w-0 flex-1">
-                                <p className="eyebrow text-[10px] text-signal-400">Selected Target Chat</p>
-                                <h4 className="truncate text-[14px] font-bold text-fog-50">{selectedChat.name}</h4>
+                    <div className="flex min-h-0 flex-1 flex-col">
+                        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
+                            {/* Selected Chat Header Pill */}
+                            <div className="flex items-center gap-3 rounded-2xl bg-white/[0.04] p-3.5 ring-1 ring-white/[0.08]">
+                                <Avatar name={selectedChat.name} picture={selectedChat.picture} size={40} />
+                                <div className="min-w-0 flex-1">
+                                    <p className="eyebrow text-[10px] text-signal-400">Selected Target Chat</p>
+                                    <h4 className="truncate text-[14px] font-bold text-fog-50">{selectedChat.name}</h4>
+                                </div>
                             </div>
-                        </div>
 
-                        {/* Quick Presets */}
-                        <div>
-                            <label className="eyebrow mb-2.5 block text-fog-400">Quick Date Presets</label>
-                            <div className="grid grid-cols-3 gap-2">
-                                {[
-                                    { id: 'today', label: 'Today' },
-                                    { id: '7d', label: 'Last 7 Days' },
-                                    { id: '30d', label: 'Last 30 Days' },
-                                ].map((p) => (
-                                    <button
-                                        key={p.id}
-                                        type="button"
-                                        onClick={() => applyPreset(p.id)}
-                                        className={cx(
-                                            'flex h-9 items-center justify-center rounded-xl text-[13px] font-medium transition-all',
-                                            preset === p.id
-                                                ? 'bg-signal-400 text-ink-950 font-bold shadow-md'
-                                                : 'bg-white/[0.05] text-fog-300 hover:bg-white/[0.09] hover:text-fog-50'
-                                        )}
-                                    >
-                                        {p.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Explicit Start & End Date/Time inputs */}
-                        <div className="space-y-4">
+                            {/* Quick Presets */}
                             <div>
-                                <label className="eyebrow mb-1.5 flex items-center gap-1.5 text-fog-300">
-                                    <Calendar className="h-3.5 w-3.5 text-signal-400" /> Start Date & Time
-                                </label>
-                                <input
-                                    type="datetime-local"
-                                    value={startDate}
-                                    onChange={(e) => {
-                                        setPreset('custom');
-                                        setStartDate(e.target.value);
-                                    }}
-                                    className="h-11 w-full rounded-xl bg-ink-900/90 px-3.5 text-[13.5px] text-fog-50 outline-none ring-1 ring-white/[0.12] focus:ring-signal-400/80"
-                                />
+                                <label className="eyebrow mb-2.5 block text-fog-400">Quick Date Presets</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {[
+                                        { id: 'today', label: 'Today' },
+                                        { id: '7d', label: 'Last 7 Days' },
+                                        { id: '30d', label: 'Last 30 Days' },
+                                    ].map((p) => (
+                                        <button
+                                            key={p.id}
+                                            type="button"
+                                            onClick={() => applyPreset(p.id)}
+                                            className={cx(
+                                                'flex h-9 items-center justify-center rounded-xl text-[13px] font-medium transition-all',
+                                                preset === p.id
+                                                    ? 'bg-signal-400 text-ink-950 font-bold shadow-md'
+                                                    : 'bg-white/[0.05] text-fog-300 hover:bg-white/[0.09] hover:text-fog-50'
+                                            )}
+                                        >
+                                            {p.label}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
 
-                            <div>
-                                <label className="eyebrow mb-1.5 flex items-center gap-1.5 text-fog-300">
-                                    <Clock className="h-3.5 w-3.5 text-signal-400" /> End Date & Time
-                                </label>
-                                <input
-                                    type="datetime-local"
-                                    value={endDate}
-                                    onChange={(e) => {
-                                        setPreset('custom');
-                                        setEndDate(e.target.value);
-                                    }}
-                                    className="h-11 w-full rounded-xl bg-ink-900/90 px-3.5 text-[13.5px] text-fog-50 outline-none ring-1 ring-white/[0.12] focus:ring-signal-400/80"
-                                />
+                            {/* Explicit Start & End Date/Time inputs */}
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="eyebrow mb-1.5 flex items-center gap-1.5 text-fog-300">
+                                        <Calendar className="h-3.5 w-3.5 text-signal-400" /> Start Date & Time
+                                    </label>
+                                    <input
+                                        type="datetime-local"
+                                        value={startDate}
+                                        onChange={(e) => {
+                                            setPreset('custom');
+                                            setStartDate(e.target.value);
+                                        }}
+                                        className="h-11 w-full rounded-xl bg-ink-900/90 px-3.5 text-[13.5px] text-fog-50 outline-none ring-1 ring-white/[0.12] focus:ring-signal-400/80"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="eyebrow mb-1.5 flex items-center gap-1.5 text-fog-300">
+                                        <Clock className="h-3.5 w-3.5 text-signal-400" /> End Date & Time
+                                    </label>
+                                    <input
+                                        type="datetime-local"
+                                        value={endDate}
+                                        onChange={(e) => {
+                                            setPreset('custom');
+                                            setEndDate(e.target.value);
+                                        }}
+                                        className="h-11 w-full rounded-xl bg-ink-900/90 px-3.5 text-[13.5px] text-fog-50 outline-none ring-1 ring-white/[0.12] focus:ring-signal-400/80"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Notice */}
+                            <div className="rounded-xl bg-verdigris-400/[0.08] p-3 text-[12.5px] leading-relaxed text-verdigris-100 ring-1 ring-verdigris-400/20">
+                                <strong>Non-blocking task:</strong> All text messages and voice notes in this range will be summarized, along with an overall conversation summary. Processing runs in the background.
                             </div>
                         </div>
 
-                        {/* Notice */}
-                        <div className="rounded-xl bg-verdigris-400/[0.08] p-3 text-[12.5px] leading-relaxed text-verdigris-100 ring-1 ring-verdigris-400/20">
-                            <strong>Non-blocking task:</strong> All voice notes inside this range will download and summarize in the background. You can continue using your website while processing occurs.
-                        </div>
-
-                        {/* Submit Button */}
-                        <div className="pt-2">
+                        {/* Always-visible Sticky Footer */}
+                        <footer className="shrink-0 border-t border-white/[0.08] bg-ink-950/90 p-4 backdrop-blur-md">
                             <Button
                                 variant="primary"
                                 loading={launching}
                                 loadingLabel="Launching background job…"
                                 onClick={handleStartAnalysis}
-                                className="h-11 w-full text-[14px] font-bold"
+                                className="h-12 w-full text-[14.5px] font-bold shadow-lg"
                             >
                                 Start Background Analysis
                             </Button>
-                        </div>
+                        </footer>
                     </div>
                 )}
             </motion.div>

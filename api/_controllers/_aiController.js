@@ -327,6 +327,59 @@ async function wahaWebhook(req, res) {
 /**
  * Background worker task for running a batch analysis asynchronously.
  */
+/**
+ * Helper to generate individual text message summary via Gemini.
+ */
+async function generateTextSummary(textBody) {
+    if (!textBody || textBody.length < 50) {
+        return { transcript: textBody, summary: textBody };
+    }
+    try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
+        const prompt = [
+            'Summarize the following message in its original language.',
+            'Respond with ONLY a JSON object: {"transcript": "...", "summary": "..."}',
+            `Message: "${textBody}"`,
+        ].join('\n');
+        const result = await model.generateContent(prompt);
+        const raw = result.response.text();
+        const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+        const parsed = JSON.parse(cleaned);
+        return {
+            transcript: textBody,
+            summary: parsed.summary || textBody,
+        };
+    } catch {
+        return { transcript: textBody, summary: textBody };
+    }
+}
+
+/**
+ * Helper to generate overall chat summary for the entire date range.
+ */
+async function generateOverallChatSummary(conversationLog) {
+    if (!conversationLog || !conversationLog.trim()) return '';
+    try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
+        const prompt = [
+            'Analyze and summarize the following chat conversation between participants during the selected date range.',
+            'Provide a clear, structured executive summary in the ORIGINAL LANGUAGE spoken/written.',
+            'Highlight key topics discussed, decisions made, action items, and important updates.',
+            'Do NOT use markdown headers (# or ##), but bullet points (-) are allowed.',
+            '',
+            `Conversation History:\n${conversationLog.slice(0, 10000)}`,
+        ].join('\n');
+        const result = await model.generateContent(prompt);
+        return result.response.text().trim();
+    } catch (err) {
+        console.warn('[batch-analyze] Could not generate overall chat summary:', err.message);
+        return '';
+    }
+}
+
+/**
+ * Background worker task for running a batch analysis asynchronously (text + voice notes).
+ */
 async function runBatchAnalysisTask(userId, batchId, targetChatId, startDate, endDate) {
     try {
         await connectDB();
@@ -353,7 +406,10 @@ async function runBatchAnalysisTask(userId, batchId, targetChatId, startDate, en
             const mType = (msg.type || msg.mediaType || '').toLowerCase();
             const mime = (msg.media?.mimetype || msg._data?.mimetype || '').toLowerCase();
             const isAudio = mType === 'ptt' || mType === 'audio' || mime.startsWith('audio/');
-            if (!hasMedia || !isAudio) return false;
+            const isText = (typeof msg.body === 'string' && msg.body.trim().length > 0) ||
+                           (typeof msg._data?.body === 'string' && msg._data.body.trim().length > 0);
+
+            if (!isAudio && !isText) return false;
 
             const rawTs = msg.timestamp || msg._data?.t;
             if (!rawTs) return false;
@@ -376,40 +432,66 @@ async function runBatchAnalysisTask(userId, batchId, targetChatId, startDate, en
             return tA - tB;
         });
 
+        const conversationEntries = [];
+
         for (const msg of matching) {
             try {
                 const messageId = msg.id?._serialized || msg.id;
                 const rawTs = msg.timestamp || msg._data?.t;
                 const msgDate = new Date(typeof rawTs === 'number' && rawTs < 1e11 ? rawTs * 1000 : Number(rawTs));
-
-                let mimetype = 'audio/ogg';
-                let base64Data = null;
-
-                try {
-                    const media = await waha.downloadMedia(session, messageId);
-                    mimetype = media.mimetype;
-                    base64Data = media.buffer.toString('base64');
-                } catch (dlErr) {
-                    console.warn(`[batch-analyze] Could not download message ${messageId}:`, dlErr.message);
-                    await BatchAnalysis.findByIdAndUpdate(batchId, { $inc: { failedNotes: 1 } });
-                    continue;
-                }
-
-                const { transcript, summary } = await generateSummary(mimetype, base64Data);
                 const { senderId, senderName } = extractSender(msg);
-                const originalAudioUrl = `data:${mimetype};base64,${base64Data}`;
+                const sName = senderName || 'WhatsApp Contact';
+
+                const mType = (msg.type || msg.mediaType || '').toLowerCase();
+                const mime = (msg.media?.mimetype || msg._data?.mimetype || '').toLowerCase();
+                const isAudio = (msg.hasMedia || Boolean(msg.media)) && (mType === 'ptt' || mType === 'audio' || mime.startsWith('audio/'));
+
+                let transcript = '';
+                let summary = '';
+                let originalAudioUrl = null;
+                let messageType = 'text';
+
+                if (isAudio) {
+                    messageType = 'audio';
+                    let mimetype = 'audio/ogg';
+                    let base64Data = null;
+
+                    try {
+                        const media = await waha.downloadMedia(session, messageId);
+                        mimetype = media.mimetype;
+                        base64Data = media.buffer.toString('base64');
+                    } catch (dlErr) {
+                        console.warn(`[batch-analyze] Could not download message ${messageId}:`, dlErr.message);
+                        await BatchAnalysis.findByIdAndUpdate(batchId, { $inc: { failedNotes: 1 } });
+                        continue;
+                    }
+
+                    const resAI = await generateSummary(mimetype, base64Data);
+                    transcript = resAI.transcript;
+                    summary = resAI.summary;
+                    originalAudioUrl = `data:${mimetype};base64,${base64Data}`;
+                } else {
+                    messageType = 'text';
+                    const textContent = (msg.body || msg._data?.body || '').trim();
+                    const resAI = await generateTextSummary(textContent);
+                    transcript = resAI.transcript;
+                    summary = resAI.summary;
+                }
 
                 const note = await VoiceNote.create({
                     userId,
                     batchId,
                     folderId: null,
                     senderId: senderId || targetChatId,
-                    senderName: senderName || 'WhatsApp Contact',
+                    senderName: sName,
+                    messageType,
                     originalAudioUrl,
                     transcript,
                     summary,
                     createdAt: msgDate,
                 });
+
+                conversationEntries.push(`[${msgDate.toLocaleTimeString()}] ${sName}: ${summary || transcript}`);
 
                 await BatchAnalysis.findByIdAndUpdate(batchId, {
                     $inc: { processedNotes: 1 },
@@ -421,7 +503,13 @@ async function runBatchAnalysisTask(userId, batchId, targetChatId, startDate, en
             }
         }
 
-        await BatchAnalysis.findByIdAndUpdate(batchId, { status: 'completed' });
+        // Generate overall chat summary
+        const overallSummary = await generateOverallChatSummary(conversationEntries.join('\n'));
+
+        await BatchAnalysis.findByIdAndUpdate(batchId, {
+            status: 'completed',
+            overallSummary,
+        });
     } catch (err) {
         console.error('[batch-analyze] Global task error:', err.message);
         await BatchAnalysis.findByIdAndUpdate(batchId, {

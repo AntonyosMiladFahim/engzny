@@ -182,6 +182,9 @@ describe('runBatchAnalysisTask background worker', () => {
             batchId: batchIdA,
             senderName: 'Sender Alice',
         }));
-        expect(BatchAnalysis.findByIdAndUpdate).toHaveBeenCalledWith(batchIdA, { status: 'completed' });
+        expect(BatchAnalysis.findByIdAndUpdate).toHaveBeenCalledWith(batchIdA, {
+            status: 'completed',
+            overallSummary: expect.any(String),
+        });
     });
 });
