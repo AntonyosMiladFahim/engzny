@@ -115,8 +115,10 @@ async function call(fn) {
 async function getSession(sessionName) {
     return call(async (http) => {
         const res = await http.get(`/api/sessions/${encodeURIComponent(sessionName)}`);
-        if (res.status === 404) return null;
-        return unwrap(res);
+        // Treat any non-2xx response (404, 400, etc) as "session does not exist".
+        // If it's a genuine error (like 401 Unauthorized), createSession will catch it properly.
+        if (res.status < 200 || res.status >= 300) return null;
+        return res.data;
     });
 }
 

@@ -162,7 +162,10 @@ async function register(req, res) {
     } catch (err) {
         // MongoServerError 11000 = duplicate key (unique index violation).
         if (err && err.code === 11000) {
-            return res.status(409).json({ message: 'An account with this email already exists' });
+            if (err.keyPattern && err.keyPattern.email) {
+                return res.status(409).json({ message: 'An account with this email already exists' });
+            }
+            return res.status(409).json({ message: 'A duplicate record already exists' });
         }
 
         // Mongoose schema validation (e.g. bad email that slipped past regex).

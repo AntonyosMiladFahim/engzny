@@ -4,6 +4,8 @@ require('dotenv').config();
 
 const authRoutes = require('./_routes/_auth');
 const wahaRoutes = require('./_routes/_waha');
+const foldersRoutes = require('./_routes/_folders');
+const notesRoutes = require('./_routes/_notes');
 
 const app = express();
 
@@ -21,6 +23,8 @@ app.get('/api/health', (req, res) => {
 // Feature routers
 app.use('/api/auth', authRoutes);
 app.use('/api/waha', wahaRoutes);
+app.use('/api/folders', foldersRoutes);
+app.use('/api/notes', notesRoutes);
 
 // ⚠️ Vercel expects the app to be exported.
 // For local development (`node api/index.js` / nodemon) we listen on a port.

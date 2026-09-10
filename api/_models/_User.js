@@ -60,7 +60,6 @@ const userSchema = new Schema(
             trim: true,
             unique: true,
             sparse: true,
-            default: null,
         },
     },
     {

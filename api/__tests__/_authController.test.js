@@ -117,7 +117,7 @@ describe('register', () => {
     });
 
     test('409 when the unique index rejects a duplicate email', async () => {
-        User.create.mockRejectedValue(Object.assign(new Error('dup'), { code: 11000 }));
+        User.create.mockRejectedValue(Object.assign(new Error('dup'), { code: 11000, keyPattern: { email: 1 } }));
         const res = mockRes();
         await register({ body: { email: 'a@b.com', password: 'password123' } }, res);
         expect(res.status).toHaveBeenCalledWith(409);
