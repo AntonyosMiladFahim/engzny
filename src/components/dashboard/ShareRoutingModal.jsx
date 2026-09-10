@@ -157,7 +157,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
     const [connected, setConnected] = useState(true);
     const [chatsLoading, setChatsLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
-    const [hasMore, setHasMore] = useState(true);
     const [offset, setOffset] = useState(0);
 
     const fetchPage = useCallback(async (pageOffset, append = false) => {
@@ -169,13 +168,13 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
             });
             const { chats = [], connected: conn = false } = res.data;
             setConnected(conn);
-            setWahaChats((prev) => append ? [...prev, ...chats] : chats);
-            if (chats.length > 0) {
-                setHasMore(true);
+
+            if (append && chats.length === 0) {
+                toast.info('All active WhatsApp chats are fully loaded.', { key: 'chats-loaded' });
             } else {
-                setHasMore(false);
+                setWahaChats((prev) => append ? [...prev, ...chats] : chats);
+                setOffset(pageOffset + chats.length);
             }
-            setOffset(pageOffset + chats.length);
         } catch {
             setConnected(false);
         } finally {
@@ -186,9 +185,9 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
     useEffect(() => { fetchPage(0, false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleLoadMore = useCallback(() => {
-        if (loadingMore || !hasMore) return;
+        if (loadingMore) return;
         fetchPage(offset, true);
-    }, [fetchPage, hasMore, loadingMore, offset]);
+    }, [fetchPage, loadingMore, offset]);
 
     // ── Merged, deduplicated rows ────────────────────────────────────────────
     const rows = useMemo(() => {
@@ -419,7 +418,7 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                         </motion.ul>
                     )}
 
-                    {!chatsLoading && !debouncedQuery && hasMore && (
+                    {!chatsLoading && !debouncedQuery && (
                         <LoadMoreButton onLoadMore={handleLoadMore} loading={loadingMore} />
                     )}
                 </div>
