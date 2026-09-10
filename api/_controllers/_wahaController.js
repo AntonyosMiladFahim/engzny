@@ -103,18 +103,25 @@ async function rememberSession(userId, sessionName) {
 /* -------------------------------------------------------------------------- */
 
 /**
- * GET /api/waha/qr   (requireAuth)
+ * POST /api/waha/pair   (requireAuth)
+ * Body: { phoneNumber: "1234567890" }
  *
- * Ensures the caller's session exists and is started, then returns the QR
- * code to scan. Response variants:
+ * Ensures the caller's session exists and is started, then returns the pairing code.
+ * Response variants:
  *
- *   200 { session, status: 'SCAN_QR_CODE', qr: 'data:image/png;base64,...' }
+ *   200 { session, status: 'SCAN_QR_CODE', code: 'ABCDEFGH' }
  *   200 { session, status: 'WORKING', connected: true }      – already linked
  *   202 { session, status: 'STARTING' | ... }                 – not ready yet, retry
+ *   400 { message }                                           – invalid phone number
  *   502 { message }                                           – WAHA unreachable
  */
-async function generateQR(req, res) {
+async function requestPairingCode(req, res) {
     const sessionName = sessionNameFor(req);
+    const { phoneNumber } = req.body;
+
+    if (!phoneNumber || typeof phoneNumber !== 'string') {
+        return res.status(400).json({ message: 'Phone number is required' });
+    }
 
     try {
         // 1. Find the caller's session, creating/starting it as needed.
@@ -132,7 +139,7 @@ async function generateQR(req, res) {
         // 2. Link the session to the user record (fire-and-forget semantics).
         await rememberSession(sessionName, sessionName);
 
-        // 3. Already paired – nothing to scan.
+        // 3. Already paired – nothing to pair.
         if (session.status === SessionStatus.WORKING) {
             return res.status(200).json(toStatusResponse(sessionName, session));
         }
@@ -145,15 +152,17 @@ async function generateQR(req, res) {
             });
         }
 
-        // 5. Ready to pair – fetch and return the QR for *this* session only.
-        const qr = await waha.getQrCode(sessionName);
+        // 5. Ready to pair – fetch and return the pairing code for *this* session only.
+        // Clean the phone number to only contain digits.
+        const cleanPhone = phoneNumber.replace(/\D/g, '');
+        const response = await waha.requestPairingCode(sessionName, cleanPhone);
 
         return res.status(200).json({
             ...toStatusResponse(sessionName, session),
-            qr: `data:${qr.mimetype || 'image/png'};base64,${qr.data}`,
+            code: response.code,
         });
     } catch (err) {
-        return handleError(res, err, 'generateQR');
+        return handleError(res, err, 'requestPairingCode');
     }
 }
 
@@ -177,7 +186,7 @@ async function checkStatus(req, res) {
 }
 
 module.exports = {
-    generateQR,
+    requestPairingCode,
     checkStatus,
     // Exported for unit tests.
     _internal: { sessionNameFor, toStatusResponse },

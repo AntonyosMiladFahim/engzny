@@ -93,13 +93,13 @@ function createFakeWaha() {
         return res.json(s);
     });
 
-    fake.get('/api/:name/auth/qr', (req, res) => {
+    fake.post('/api/:name/auth/request-code', (req, res) => {
         if (state.failQr) return res.status(500).json({ message: 'engine crashed' });
         const s = sessions.get(req.params.name);
         if (!s) return res.status(404).json({ message: 'Session not found' });
         if (s.status !== 'SCAN_QR_CODE') return res.status(422).json({ message: 'Not in QR state' });
-        // Encode the session name into the "image" so tests can prove whose QR came back.
-        return res.json({ mimetype: 'image/png', data: Buffer.from(`QR-FOR-${s.name}`).toString('base64') });
+        // Return a mock pairing code using the session name so tests can prove whose code came back.
+        return res.json({ code: `CODE-${s.name}`.substring(0, 8) });
     });
 
     return {
@@ -171,7 +171,7 @@ beforeEach(() => {
 /* -------------------------------------------------------------------------- */
 
 describe('WAHA routes – authentication gate', () => {
-    test.each(['/api/waha/qr', '/api/waha/status'])('%s without a token → 401 and WAHA is never called', async (path) => {
+    test.each(['/api/waha/pair', '/api/waha/status'])('%s without a token → 401 and WAHA is never called', async (path) => {
         const res = await request(app).get(path);
         expect(res.status).toBe(401);
         expect(waha.requests).toHaveLength(0);
@@ -188,16 +188,23 @@ describe('WAHA routes – authentication gate', () => {
 /*                                 generateQR                                 */
 /* -------------------------------------------------------------------------- */
 
-describe('GET /api/waha/qr', () => {
-    test('creates a session named after req.user.id and returns its QR', async () => {
-        const res = await asA(request(app).get('/api/waha/qr'));
+describe('POST /api/waha/pair', () => {
+    const phoneNumber = '1234567890';
+
+    test('400 on missing phone number', async () => {
+        const res = await asA(request(app).post('/api/waha/pair').send({}));
+        expect(res.status).toBe(400);
+        expect(waha.requests).toHaveLength(0);
+    });
+
+    test('creates a session named after req.user.id and returns its pairing code', async () => {
+        const res = await asA(request(app).post('/api/waha/pair').send({ phoneNumber }));
 
         expect(res.status).toBe(200);
         expect(res.body.session).toBe(userA.id);
         expect(res.body.status).toBe('SCAN_QR_CODE');
         expect(res.body.connected).toBe(false);
-        expect(res.body.qr).toMatch(/^data:image\/png;base64,/);
-        expect(decodeQr(res.body.qr)).toBe(`QR-FOR-${userA.id}`);
+        expect(res.body.code).toBe(`CODE-${userA.id}`.substring(0, 8));
 
         // The session-creation payload used the authenticated user's id.
         const create = waha.requests.find((r) => r.method === 'POST' && r.url === '/api/sessions');
@@ -206,17 +213,16 @@ describe('GET /api/waha/qr', () => {
 
         // Every upstream call carried the API key and addressed A's session only.
         expect(waha.requests.every((r) => r.apiKey === API_KEY)).toBe(true);
-        expect(waha.requests.filter((r) => r.url.includes(userA.id))).toHaveLength(2); // GET session + GET qr
         expect(waha.sawId(userB.id)).toBe(false);
 
         // The session name is persisted on the user record.
         expect(User.findByIdAndUpdate).toHaveBeenCalledWith(userA.id, { wahaSessionId: userA.id });
     });
 
-    test('returns connected:true without fetching a QR when already WORKING', async () => {
+    test('returns connected:true without fetching a pairing code when already WORKING', async () => {
         waha.seed(userA.id, 'WORKING', { id: '201000000000@c.us', pushName: 'A' });
 
-        const res = await asA(request(app).get('/api/waha/qr'));
+        const res = await asA(request(app).post('/api/waha/pair').send({ phoneNumber }));
 
         expect(res.status).toBe(200);
         expect(res.body).toEqual({
@@ -225,17 +231,17 @@ describe('GET /api/waha/qr', () => {
             connected: true,
             me: { id: '201000000000@c.us', pushName: 'A' },
         });
-        expect(res.body).not.toHaveProperty('qr');
-        expect(waha.requests.some((r) => r.url.includes('/auth/qr'))).toBe(false);
+        expect(res.body).not.toHaveProperty('code');
+        expect(waha.requests.some((r) => r.url.includes('/auth/request-code'))).toBe(false);
     });
 
-    test('restarts a STOPPED session before returning the QR', async () => {
+    test('restarts a STOPPED session before returning the pairing code', async () => {
         waha.seed(userA.id, 'STOPPED');
 
-        const res = await asA(request(app).get('/api/waha/qr'));
+        const res = await asA(request(app).post('/api/waha/pair').send({ phoneNumber }));
 
         expect(res.status).toBe(200);
-        expect(decodeQr(res.body.qr)).toBe(`QR-FOR-${userA.id}`);
+        expect(res.body.code).toBe(`CODE-${userA.id}`.substring(0, 8));
         expect(waha.requests.some((r) => r.method === 'POST' && r.url === `/api/sessions/${userA.id}/start`)).toBe(true);
         expect(waha.requests.some((r) => r.method === 'POST' && r.url === '/api/sessions')).toBe(false);
     });
@@ -243,15 +249,15 @@ describe('GET /api/waha/qr', () => {
     test('returns 202 with retry hint while the engine is STARTING', async () => {
         waha.seed(userA.id, 'STARTING');
 
-        const res = await asA(request(app).get('/api/waha/qr'));
+        const res = await asA(request(app).post('/api/waha/pair').send({ phoneNumber }));
 
         expect(res.status).toBe(202);
         expect(res.body).toMatchObject({ session: userA.id, status: 'STARTING', connected: false, retryAfterMs: expect.any(Number) });
-        expect(res.body).not.toHaveProperty('qr');
+        expect(res.body).not.toHaveProperty('code');
     });
 
     test('does not leak WAHA internals (config) to the client', async () => {
-        const res = await asA(request(app).get('/api/waha/qr'));
+        const res = await asA(request(app).post('/api/waha/pair').send({ phoneNumber }));
         expect(res.body).not.toHaveProperty('config');
         expect(JSON.stringify(res.body)).not.toMatch(/engine-internals/);
     });
@@ -331,12 +337,12 @@ describe('Tenant isolation – User A cannot reach User B\'s session', () => {
         expect(waha.requests).toHaveLength(0);
     });
 
-    test('qr: ?session=<B> is ignored – A gets a session and QR for A', async () => {
-        const res = await asA(request(app).get('/api/waha/qr').query({ session: userB.id }).send({ name: userB.id }));
+    test('pair: ?session=<B> is ignored – A gets a session and pairing code for A', async () => {
+        const res = await asA(request(app).post('/api/waha/pair').query({ session: userB.id }).send({ phoneNumber: '1234567890', name: userB.id }));
 
         expect(res.status).toBe(200);
         expect(res.body.session).toBe(userA.id);
-        expect(decodeQr(res.body.qr)).toBe(`QR-FOR-${userA.id}`);
+        expect(res.body.code).toBe(`CODE-${userA.id}`.substring(0, 8));
 
         const create = waha.requests.find((r) => r.method === 'POST' && r.url === '/api/sessions');
         expect(create.body.name).toBe(userA.id);
@@ -344,8 +350,8 @@ describe('Tenant isolation – User A cannot reach User B\'s session', () => {
         expect(User.findByIdAndUpdate).not.toHaveBeenCalledWith(userB.id, expect.anything());
     });
 
-    test('qr: there is no /qr/:session path to abuse', async () => {
-        const res = await asA(request(app).get(`/api/waha/qr/${userB.id}`));
+    test('pair: there is no /pair/:session path to abuse', async () => {
+        const res = await asA(request(app).post(`/api/waha/pair/${userB.id}`).send({ phoneNumber: '1234567890' }));
         expect(res.status).toBe(404);
         expect(waha.requests).toHaveLength(0);
     });
@@ -385,7 +391,7 @@ describe('WAHA failures surface as 502, never as 500 or as another tenant\'s dat
         process.env.WAHA_API_KEY = 'wrong-key';
         const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-        const res = await asA(request(app).get('/api/waha/status'));
+        const res = await asA(request(app).post('/api/waha/pair').send({ phoneNumber: '1234567890' }));
 
         expect(res.status).toBe(502);
         expect(res.body).toEqual({ message: expect.any(String) });
@@ -398,18 +404,18 @@ describe('WAHA failures surface as 502, never as 500 or as another tenant\'s dat
         process.env.WAHA_URL = 'http://127.0.0.1:1'; // nothing listens on port 1
         const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-        const res = await asA(request(app).get('/api/waha/qr'));
+        const res = await asA(request(app).post('/api/waha/pair').send({ phoneNumber: '1234567890' }));
 
         expect(res.status).toBe(502);
         process.env.WAHA_URL = saved;
         spy.mockRestore();
     });
 
-    test('QR endpoint failing mid-flow → 502, and only A\'s id was ever used upstream', async () => {
+    test('Pairing endpoint failing mid-flow → 502, and only A\'s id was ever used upstream', async () => {
         waha.state.failQr = true;
         const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-        const res = await asA(request(app).get('/api/waha/qr'));
+        const res = await asA(request(app).post('/api/waha/pair').send({ phoneNumber: '1234567890' }));
 
         spy.mockRestore();
         expect(res.status).toBe(502);

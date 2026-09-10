@@ -3,7 +3,7 @@
  * ------------------------------------------------------------------
  * WhatsApp (WAHA) session routes. Mounted at /api/waha in api/index.js.
  *
- *   GET /api/waha/qr      – create/start the caller's session, return QR
+ *   POST /api/waha/pair   – create/start the caller's session, return pairing code
  *   GET /api/waha/status  – connection state of the caller's session
  *
  * Both routes require a Bearer token. Note there is deliberately NO
@@ -23,7 +23,7 @@ const router = express.Router();
 
 router.use(requireAuth);
 
-router.get('/qr', wahaController.generateQR);
+router.post('/pair', wahaController.requestPairingCode);
 router.get('/status', wahaController.checkStatus);
 
 module.exports = router;
