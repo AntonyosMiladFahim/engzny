@@ -83,14 +83,21 @@ const voiceNoteSchema = new Schema(
         },
 
         /**
-         * Location of the raw audio as delivered by WAHA (typically an
-         * `.ogg`/opus file). We store a URL rather than the binary itself to
-         * keep documents small and well under MongoDB's 16 MB limit.
+         * Message content type: 'audio' for voice notes, 'text' for text messages.
+         */
+        messageType: {
+            type: String,
+            enum: ['audio', 'text'],
+            default: 'audio',
+        },
+
+        /**
+         * Location of raw audio (for audio notes). Null for plain text messages.
          */
         originalAudioUrl: {
             type: String,
-            required: [true, 'Original audio URL is required'],
             trim: true,
+            default: null,
         },
 
         /**

@@ -109,6 +109,15 @@ const batchAnalysisSchema = new Schema(
         },
 
         /**
+         * Overall AI summary of the entire chat conversation during the specified date range.
+         */
+        overallSummary: {
+            type: String,
+            trim: true,
+            default: '',
+        },
+
+        /**
          * References to all VoiceNote documents created as part of this batch.
          */
         noteIds: [

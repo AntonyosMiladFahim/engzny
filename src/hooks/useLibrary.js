@@ -42,6 +42,7 @@ export function normalizeBatch(raw) {
         processedNotes: raw.processedNotes ?? 0,
         failedNotes: raw.failedNotes ?? 0,
         error: raw.error ?? null,
+        overallSummary: raw.overallSummary ?? '',
         createdAt: raw.createdAt ?? null,
     };
 }
@@ -96,6 +97,8 @@ export function normalizeNote(raw) {
             'Unknown Contact',
         senderId: senderId ? String(senderId) : null,
         durationSec: raw.durationSec ?? raw.duration ?? raw.seconds ?? null,
+        originalAudioUrl: raw.originalAudioUrl ?? null,
+        messageType: raw.messageType ?? (raw.originalAudioUrl ? 'audio' : 'text'),
         createdAt: raw.createdAt ?? raw.timestamp ?? raw.date ?? null,
         folderId: folder && typeof folder === 'object' ? String(folder._id ?? folder.id) : folder ? String(folder) : null,
         folderName: folder && typeof folder === 'object' ? folder.name : raw.folderName ?? null,
