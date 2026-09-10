@@ -43,10 +43,13 @@ export function contactHandle(senderId) {
     if (at === -1) return /^\d{6,20}$/.test(id) ? `+${id}` : id;
 
     const suffix = id.slice(at).toLowerCase();
-    if (suffix !== '@c.us' && suffix !== '@s.whatsapp.net') return id;
+    // Only @c.us and @s.whatsapp.net carry real dialable phone numbers.
+    // @lid, @g.us, @broadcast, and anything else are opaque identifiers that
+    // must NOT be shown as subtitles — return null so the UI suppresses them.
+    if (suffix !== '@c.us' && suffix !== '@s.whatsapp.net') return null;
 
     const local = id.slice(0, at).split(':')[0];
-    return /^\d{6,20}$/.test(local) ? `+${local}` : id;
+    return /^\d{6,20}$/.test(local) ? `+${local}` : null;
 }
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
