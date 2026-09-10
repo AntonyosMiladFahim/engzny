@@ -107,6 +107,7 @@ export default function NotesGrid({
     groupKey,
     pending = false,
     contactName = null,
+    onSelectContact,
 }) {
     const reduce = useReducedMotion();
     const [expandedId, setExpandedId] = useState(null);
@@ -140,6 +141,7 @@ export default function NotesGrid({
                         query={query}
                         expanded={expandedId === n.id}
                         onToggle={() => setExpandedId((cur) => (cur === n.id ? null : n.id))}
+                        onSelectContact={onSelectContact}
                     />
                 ))}
             </motion.div>

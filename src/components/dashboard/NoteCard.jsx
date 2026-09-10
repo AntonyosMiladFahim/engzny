@@ -16,8 +16,13 @@ import { formatDuration, formatRelative, initials, waveformFor } from '../format
  * and the summary. A card that only matched deep inside a long summary also
  * auto-expands its clamp so the reason it survived the filter is visible
  * without a click.
+ *
+ * `onSelectContact` — optional callback fired with `note.senderId`. When
+ * present and the note has a senderId, the sender name becomes a tactile
+ * tappable chip that jumps the user straight to that contact's filter in the
+ * sidebar. Notes from the PWA share target (no senderId) keep a plain label.
  */
-export default function NoteCard({ note, expanded = false, onToggle, query = '' }) {
+export default function NoteCard({ note, expanded = false, onToggle, query = '', onSelectContact }) {
     const reduce = useReducedMotion();
     const tilt = useTilt();
     const bars = useMemo(() => waveformFor(note.id, 22), [note.id]);
@@ -31,6 +36,10 @@ export default function NoteCard({ note, expanded = false, onToggle, query = '' 
         return (note.summary ?? '').toLowerCase().includes(term.toLowerCase()) && !head.includes(term.toLowerCase());
     }, [note.summary, term]);
     const open = expanded || matchedDeep;
+
+    // A note is "attributable" when it arrived via WhatsApp (senderId present).
+    // Only attributable notes get a clickable sender chip.
+    const clickableSender = Boolean(note.senderId && onSelectContact);
 
     return (
         <motion.article
@@ -50,12 +59,44 @@ export default function NoteCard({ note, expanded = false, onToggle, query = '' 
             />
 
             <header className="relative flex items-center gap-3">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-ink-700 font-mono text-[12px] text-signal-300 shadow-hairline">
+                {/* Avatar: clicking jumps to this contact when attributable */}
+                <button
+                    type="button"
+                    onClick={clickableSender ? () => onSelectContact(note.senderId) : undefined}
+                    disabled={!clickableSender}
+                    aria-label={clickableSender ? `Filter by ${note.sender}` : undefined}
+                    title={clickableSender ? `Show all notes from ${note.sender}` : undefined}
+                    className={cx(
+                        'grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-ink-700 font-mono text-[12px] text-signal-300 shadow-hairline',
+                        clickableSender
+                            ? 'cursor-pointer transition-[transform,box-shadow,background-color] duration-150 hover:-translate-y-px hover:bg-ink-600 hover:shadow-signal-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400/60 active:scale-95'
+                            : 'cursor-default'
+                    )}
+                >
                     {initials(note.sender)}
-                </span>
+                </button>
+
                 <div className="min-w-0 flex-1 leading-tight">
                     <p className="truncate text-[14px] font-bold text-fog-50">
-                        <Highlight text={note.sender} query={term} />
+                        {clickableSender ? (
+                            /*
+                             * Sender chip: the text itself is also clickable with an
+                             * underline-on-hover so the affordance is unmissable. We render
+                             * it as a <button> inside the <p> to keep the heading's flow.
+                             */
+                            <button
+                                type="button"
+                                onClick={() => onSelectContact(note.senderId)}
+                                aria-label={`Filter by ${note.sender}`}
+                                className="group/sender inline-flex items-baseline gap-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400/60 rounded-sm"
+                            >
+                                <span className="underline-offset-2 transition-[text-decoration-color,color] duration-150 decoration-fog-600/0 group-hover/sender:decoration-verdigris-400/60 group-hover/sender:text-verdigris-100 underline">
+                                    <Highlight text={note.sender} query={term} />
+                                </span>
+                            </button>
+                        ) : (
+                            <Highlight text={note.sender} query={term} />
+                        )}
                     </p>
                     <p className="mt-0.5 truncate font-mono text-[11px] text-fog-500">
                         {formatRelative(note.createdAt)}

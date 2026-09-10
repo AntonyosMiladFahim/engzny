@@ -406,6 +406,7 @@ export default function Dashboard() {
                             contactName={activeContact?.name ?? null}
                             linked={waha.isConnected}
                             groupKey={`${folderId ?? 'all'}:${senderId ?? 'any'}:${debounced.trim()}`}
+                            onSelectContact={selectContact}
                         />
                     </motion.section>
                 </div>

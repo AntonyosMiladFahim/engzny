@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FolderOpen, Inbox, Link2, Search } from 'lucide-react';
+import { BookOpen, Inbox, Link2, Search } from 'lucide-react';
 import cx from '../ui/cx';
 import { SPRING_SNAPPY } from '../motion';
 
@@ -52,7 +52,7 @@ export default function MobileNav({ view, onNotes, onFolders, onSearch, linked }
         >
             <div className="glass flex items-center gap-1 rounded-3xl p-1.5">
                 <Item icon={Inbox} label="Notes" active={view === 'all'} onClick={onNotes} />
-                <Item icon={FolderOpen} label="Folders" active={view === 'folder'} onClick={onFolders} />
+                <Item icon={BookOpen} label="Library" active={view === 'folder'} onClick={onFolders} />
                 <Item icon={Search} label="Search" onClick={onSearch} />
                 <Item icon={Link2} label="Link" to="/connect" badge={linked ? 'bg-signal-400' : 'bg-ember-400'} />
             </div>
