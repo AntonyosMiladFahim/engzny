@@ -84,8 +84,17 @@ exports.checkStatus = async (req, res) => {
   try {
     const sessionId = String(req.user.id);
 
-    // Step 1: Check Status
-    const response = await wahaApi.get(`/api/sessions/${sessionId}/status`);
+    // Step 1: Check Status (WAHA endpoint is /api/sessions/:id)
+    let response;
+    try {
+      response = await wahaApi.get(`/api/sessions/${sessionId}`);
+    } catch (err) {
+      if (err.response && err.response.status === 404) {
+        return res.status(200).json({ connected: false, status: 'NOT_CREATED' });
+      }
+      throw err;
+    }
+
     const status = response.data.status;
 
     // Step 2: Evaluate & Update DB

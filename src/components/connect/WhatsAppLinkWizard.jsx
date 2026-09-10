@@ -249,7 +249,7 @@ export default function WhatsAppLinkWizard({ onComplete }) {
               <ol className="space-y-3">
                 <li className="flex text-sm text-gray-600">
                   <span className="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center font-bold text-xs mr-3 flex-shrink-0 mt-0.5">1</span>
-                  <span>Open WhatsApp on your phone.</span>
+                  <span>Open Whats on your phone.</span>
                 </li>
                 <li className="flex text-sm text-gray-600">
                   <span className="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center font-bold text-xs mr-3 flex-shrink-0 mt-0.5">2</span>
