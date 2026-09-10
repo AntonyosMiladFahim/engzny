@@ -105,7 +105,7 @@ function extractSender(payload = {}) {
  * @returns {Promise<{ transcript: string, summary: string }>}
  */
 async function generateSummary(mimeType, base64Data) {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
 
     const prompt = `
 You are an expert multilingual transcription and summarization assistant.
