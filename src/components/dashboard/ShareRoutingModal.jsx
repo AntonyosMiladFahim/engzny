@@ -26,11 +26,12 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ChevronDown, Link2Off, Loader2, Mic, Search, SkipForward, X } from 'lucide-react';
+import { Link2Off, Loader2, Mic, Search, SkipForward, X } from 'lucide-react';
 import api from '../../services/api';
 import { initials, contactHandle } from '../format';
 import { SPRING_SNAPPY, SPRING_SOFT } from '../motion';
 import { toast } from '../ui/toast';
+import Button from '../ui/Button';
 import cx from '../ui/cx';
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
@@ -134,43 +135,31 @@ function ChatRow({ row, onSelect }) {
 
 /* ── "Load more" button ───────────────────────────────────────────────────── */
 
+/**
+ * Uses the project's canonical Button component (variant="ghost") so the
+ * style is automatically consistent with the rest of the design system.
+ * The Button's built-in Loader2 spinner and AnimatePresence label swap
+ * handle the loading state — no extra markup needed here.
+ */
 function LoadMoreButton({ onLoadMore, loading }) {
     return (
         <motion.div
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             transition={SPRING_SNAPPY}
-            className="flex justify-center pb-2 pt-1"
+            className="flex justify-center px-3 pb-2 pt-1"
         >
-            <button
-                type="button"
+            <Button
+                variant="ghost"
+                loading={loading}
+                loadingLabel="Loading chats…"
+                icon={null}
                 onClick={onLoadMore}
                 disabled={loading}
-                className={cx(
-                    'group inline-flex items-center gap-2 rounded-xl px-4 py-2',
-                    'bg-white/[0.05] shadow-hairline ring-1 ring-white/[0.07]',
-                    'font-mono text-[11px] uppercase tracking-[0.13em] text-fog-400',
-                    'transition-[background-color,color,opacity] duration-150',
-                    'hover:bg-white/[0.08] hover:text-fog-100',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400/60',
-                    'disabled:cursor-wait disabled:opacity-50'
-                )}
+                className="h-9 w-full text-[12px] tracking-[0.04em]"
             >
-                {loading ? (
-                    <Loader2
-                        aria-hidden="true"
-                        className="h-3.5 w-3.5 animate-spin-slow text-signal-400"
-                        strokeWidth={2}
-                    />
-                ) : (
-                    <ChevronDown
-                        aria-hidden="true"
-                        className="h-3.5 w-3.5 transition-transform duration-150 group-hover:translate-y-[1px]"
-                        strokeWidth={2}
-                    />
-                )}
-                {loading ? 'Loading…' : 'Load more chats'}
-            </button>
+                Load older chats
+            </Button>
         </motion.div>
     );
 }
@@ -276,6 +265,10 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                 await api.post('/ai/upload', {
                     audioBase64: base64,
                     mimeType: fullItem.type || 'audio/ogg',
+                    // Use the file's lastModified date if available (ms since epoch),
+                    // so the note is filed under when the audio was actually created
+                    // rather than the server's insertion time.
+                    timestamp: fullItem.blob?.lastModified ?? Date.now(),
                     ...(senderId ? { senderId, senderName } : {}),
                 });
                 await window.engzny.shareInbox.delete(item.id);

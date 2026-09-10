@@ -167,7 +167,7 @@ async function generateSummary(mimeType, base64Data) {
  * Saves the note and validates folder ownership.
  */
 async function uploadVoiceNote(req, res) {
-    const { audioBase64, mimeType, folderId, senderName, senderId } = req.body;
+    const { audioBase64, mimeType, folderId, senderName, senderId, timestamp } = req.body;
 
     if (!audioBase64) {
         return res.status(400).json({ message: 'Audio payload (audioBase64) is required' });
@@ -194,6 +194,15 @@ async function uploadVoiceNote(req, res) {
         // For now, pending architectural decision on S3, we strictly store the base64 payload
         const originalAudioUrl = `data:${mimeType || 'audio/ogg'};base64,${audioBase64}`;
 
+        // If the caller provided a timestamp (ms since epoch), use it as the
+        // document's createdAt. This allows PWA share-target uploads to be dated
+        // to the file's lastModified rather than the server insertion time.
+        // We cap at Date.now() to guard against future-dated values.
+        const maybeCreatedAt =
+            typeof timestamp === 'number' && Number.isFinite(timestamp) && timestamp > 0
+                ? new Date(Math.min(timestamp, Date.now()))
+                : undefined;
+
         const note = await VoiceNote.create({
             userId: req.user.id,
             folderId: folderId || null,
@@ -206,6 +215,7 @@ async function uploadVoiceNote(req, res) {
             originalAudioUrl,
             transcript,
             summary,
+            ...(maybeCreatedAt ? { createdAt: maybeCreatedAt } : {}),
         });
 
         return res.status(201).json(note);
@@ -254,8 +264,16 @@ async function wahaWebhook(req, res) {
         // 2. Generate transcript + summary via Gemini
         const { transcript, summary } = await generateSummary(mimetype, base64Data);
 
-        // 3. Save to Database
+        // 3. Save to Database — use the WAHA message timestamp as createdAt so
+        //    the note is filed under when it was actually *sent*, not when our
+        //    server processed it. payload.timestamp is UNIX seconds; Mongoose
+        //    accepts a Date, and `timestamps: true` will not overwrite an
+        //    explicitly-supplied createdAt.
         const originalAudioUrl = `data:${mimetype};base64,${base64Data}`;
+        const msgTimestamp = typeof payload.timestamp === 'number' && payload.timestamp > 0
+            ? new Date(payload.timestamp * 1000)
+            : new Date();
+
         await VoiceNote.create({
             userId: session,
             folderId: null, // webhooks hit the "inbox" (unfiled)
@@ -264,6 +282,7 @@ async function wahaWebhook(req, res) {
             originalAudioUrl,
             transcript,
             summary,
+            createdAt: msgTimestamp,
         });
 
         // 4. Reply strictly back to the original req.user.id (session)
