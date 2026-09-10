@@ -199,6 +199,19 @@ async function downloadMedia(sessionName, messageId) {
     });
 }
 
+/**
+ * POST /api/{session}/auth/request-code – request pairing code.
+ * @returns {Promise<{code: string}>}
+ */
+async function requestPairingCode(sessionName, phoneNumber) {
+    return call(async (http) => {
+        const res = await http.post(`/api/${encodeURIComponent(sessionName)}/auth/request-code`, {
+            phoneNumber
+        });
+        return unwrap(res);
+    });
+}
+
 module.exports = {
     SessionStatus,
     WahaError,
@@ -206,6 +219,7 @@ module.exports = {
     createSession,
     startSession,
     getQrCode,
+    requestPairingCode,
     sendText,
     downloadMedia,
 };
