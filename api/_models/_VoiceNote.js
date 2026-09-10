@@ -40,6 +40,17 @@ const voiceNoteSchema = new Schema(
         },
 
         /**
+         * Optional BatchAnalysis ID if this voice note was created as part of
+         * a bulk chat analysis. `null` == regular inbox / uploaded note.
+         */
+        batchId: {
+            type: Schema.Types.ObjectId,
+            ref: 'BatchAnalysis',
+            default: null,
+            index: true,
+        },
+
+        /**
          * WhatsApp chat id of whoever sent the voice note – e.g.
          * `201001234567@c.us`. This is the *stable* grouping key for the
          * Contacts rail: display names change, the id does not.

@@ -29,6 +29,8 @@ export default function Sidebar({
     connection,
     user,
     onLogout,
+    partition = 'library',
+    onSelectPartition,
     className,
 }) {
     return (
@@ -42,34 +44,70 @@ export default function Sidebar({
                 <Brand compact />
             </div>
 
+            {/* Partition Switcher */}
+            <div className="mt-6 flex rounded-2xl bg-white/[0.04] p-1 ring-1 ring-white/[0.06]">
+                <button
+                    type="button"
+                    onClick={() => onSelectPartition?.('library')}
+                    className={cx(
+                        'flex-1 rounded-xl py-1.5 text-center text-[12.5px] font-bold transition-all',
+                        partition === 'library'
+                            ? 'bg-signal-400 text-ink-950 shadow-sm'
+                            : 'text-fog-400 hover:text-fog-100'
+                    )}
+                >
+                    Library
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onSelectPartition?.('analyzed')}
+                    className={cx(
+                        'flex-1 rounded-xl py-1.5 text-center text-[12.5px] font-bold transition-all',
+                        partition === 'analyzed'
+                            ? 'bg-signal-400 text-ink-950 shadow-sm'
+                            : 'text-fog-400 hover:text-fog-100'
+                    )}
+                >
+                    Analyzed Chats
+                </button>
+            </div>
+
             <div
-                className="mt-8 flex-1 overflow-y-auto pr-1 [scrollbar-width:thin]"
+                className="mt-6 flex-1 overflow-y-auto pr-1 [scrollbar-width:thin]"
                 style={{
                     maskImage: 'linear-gradient(to bottom, transparent 0, black 14px, black calc(100% - 20px), transparent 100%)',
                     WebkitMaskImage:
                         'linear-gradient(to bottom, transparent 0, black 14px, black calc(100% - 20px), transparent 100%)',
                 }}
             >
-                <FolderList
-                    folders={folders}
-                    activeId={activeId}
-                    onSelect={onSelect}
-                    loading={loading}
-                    totalCount={totalCount}
-                    suspended={Boolean(activeContactId)}
-                    layoutGroup="sidebar"
-                />
+                {partition === 'library' ? (
+                    <>
+                        <FolderList
+                            folders={folders}
+                            activeId={activeId}
+                            onSelect={onSelect}
+                            loading={loading}
+                            totalCount={totalCount}
+                            suspended={Boolean(activeContactId)}
+                            layoutGroup="sidebar"
+                        />
 
-                <div aria-hidden="true" className="mx-3 mt-7 h-px bg-gradient-to-r from-white/[0.09] via-white/[0.04] to-transparent" />
+                        <div aria-hidden="true" className="mx-3 mt-7 h-px bg-gradient-to-r from-white/[0.09] via-white/[0.04] to-transparent" />
 
-                <ContactList
-                    contacts={contacts}
-                    activeId={activeContactId}
-                    onSelect={onSelectContact}
-                    loading={contactsLoading}
-                    error={contactsError}
-                    layoutGroup="sidebar"
-                />
+                        <ContactList
+                            contacts={contacts}
+                            activeId={activeContactId}
+                            onSelect={onSelectContact}
+                            loading={contactsLoading}
+                            error={contactsError}
+                            layoutGroup="sidebar"
+                        />
+                    </>
+                ) : (
+                    <div className="px-1 text-[13px] leading-relaxed text-fog-400">
+                        Viewing <span className="font-bold text-signal-400">Analyzed Chats</span> partition. All bulk voice note analysis jobs will appear in the main view.
+                    </div>
+                )}
             </div>
 
             <div className="mt-6 flex flex-col gap-4">

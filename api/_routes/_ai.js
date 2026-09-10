@@ -43,4 +43,15 @@ router.post('/webhook', (req, res, next) => {
  */
 router.post('/upload', requireAuth, aiController.uploadVoiceNote);
 
+/**
+ * Bulk Chat Analysis endpoints (requireAuth)
+ *
+ *   POST /api/ai/batch-analyze  - start asynchronous bulk analysis for a WhatsApp chat
+ *   GET  /api/ai/batches        - list all bulk batch analyses for the user
+ *   GET  /api/ai/batches/:id    - fetch detail and notes for a specific batch
+ */
+router.post('/batch-analyze', requireAuth, aiController.startBatchAnalysis);
+router.get('/batches', requireAuth, aiController.getBatchAnalyses);
+router.get('/batches/:id', requireAuth, aiController.getBatchDetail);
+
 module.exports = router;

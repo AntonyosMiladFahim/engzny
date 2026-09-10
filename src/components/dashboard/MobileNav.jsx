@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BookOpen, Inbox, Link2, Search } from 'lucide-react';
+import { BookOpen, Inbox, Link2, Search, Sparkles } from 'lucide-react';
 import cx from '../ui/cx';
 import { SPRING_SNAPPY } from '../motion';
 
@@ -43,7 +43,7 @@ function Item({ icon: Icon, label, active, onClick, to, badge }) {
 }
 
 /** Bottom navigation for < lg. Sits above the safe-area inset. */
-export default function MobileNav({ view, onNotes, onFolders, onSearch, linked }) {
+export default function MobileNav({ view, partition, onNotes, onFolders, onAnalyzed, onSearch, linked }) {
     return (
         <nav
             aria-label="Primary"
@@ -51,8 +51,9 @@ export default function MobileNav({ view, onNotes, onFolders, onSearch, linked }
             style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
             <div className="glass flex items-center gap-1 rounded-3xl p-1.5">
-                <Item icon={Inbox} label="Notes" active={view === 'all'} onClick={onNotes} />
-                <Item icon={BookOpen} label="Library" active={view === 'folder'} onClick={onFolders} />
+                <Item icon={Inbox} label="Notes" active={partition === 'library' && view === 'all'} onClick={onNotes} />
+                <Item icon={BookOpen} label="Library" active={partition === 'library' && view === 'folder'} onClick={onFolders} />
+                <Item icon={Sparkles} label="Analyzed" active={partition === 'analyzed'} onClick={onAnalyzed} />
                 <Item icon={Search} label="Search" onClick={onSearch} />
                 <Item icon={Link2} label="Link" to="/connect" badge={linked ? 'bg-signal-400' : 'bg-ember-400'} />
             </div>
