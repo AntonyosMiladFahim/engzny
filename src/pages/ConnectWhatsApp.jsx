@@ -96,7 +96,7 @@ export default function ConnectWhatsApp() {
         if (phase !== 'idle' || polling.isConnected) return 'linked';
         if (polling.error && (!polling.status || polling.failures >= 2)) return 'offline';
         if (!polling.status) return 'loading';
-        if (polling.isScanning) return 'scan';
+        if (polling.status === 'NOT_CREATED' || polling.isScanning) return 'scan';
         if (polling.isFailed) return 'failed';
         return 'starting';
     }, [phase, polling.isConnected, polling.error, polling.status, polling.failures, polling.isScanning, polling.isFailed]);
