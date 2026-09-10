@@ -51,6 +51,7 @@ function serializeNote(n) {
         _id: n._id,
         id: String(n._id),
         summary: n.summary ?? '',
+        transcript: n.transcript ?? '',
         senderId: n.senderId ?? null,
         senderName: n.senderName ?? '',
         // Pre-resolved so every surface (card, drawer, export) agrees on the
@@ -219,6 +220,84 @@ router.get('/', requireAuth, async (req, res) => {
     } catch (err) {
         console.error('[notes] GET failed:', err);
         res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+/**
+ * GET /api/notes/:id/audio
+ *
+ * Stream the raw audio bytes for a single note so the browser can play it
+ * natively without the frontend ever holding the full base64 string.
+ *
+ * How it works:
+ *   1. The note's `originalAudioUrl` is stored as a `data:` URI:
+ *         data:audio/ogg;base64,<base64bytes>
+ *   2. We split on the first comma, decode the base64 half back to a Buffer,
+ *      and write it to the response with the correct Content-Type.
+ *
+ * Security:
+ *   - Scoped to `req.user._id` — a user can only stream their own notes.
+ *   - `originalAudioUrl` is NEVER returned by the bulk GET route
+ *      (`serializeNote` omits it). The only way to reach the bytes is this
+ *      dedicated endpoint, which re-checks ownership on every request.
+ *
+ * Performance:
+ *   - We set `Content-Length` so the browser knows how big the file is and
+ *     can render a proper progress bar in the audio element.
+ *   - `Accept-Ranges: bytes` enables HTML5 audio seeking without a byte-range
+ *     implementation on our end — Chrome / Safari / Firefox all fall back to
+ *     a full-file request when the server doesn't handle range requests, which
+ *     is acceptable for voice-note lengths (≤30 seconds, ~300 KB).
+ */
+router.get('/:id/audio', requireAuth, async (req, res) => {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+        return res.status(400).json({ message: 'Invalid note ID' });
+    }
+
+    try {
+        await connectDB();
+
+        // Fetch only the fields we need — originalAudioUrl is the heavy one.
+        const note = await VoiceNote.findOne(
+            { _id: id, userId: req.user._id },
+            { originalAudioUrl: 1 }
+        ).lean();
+
+        if (!note) {
+            return res.status(404).json({ message: 'Note not found' });
+        }
+
+        const dataUri = note.originalAudioUrl ?? '';
+        if (!dataUri.startsWith('data:')) {
+            return res.status(404).json({ message: 'No audio stored for this note' });
+        }
+
+        // data:<mimetype>;base64,<data>
+        const commaIdx = dataUri.indexOf(',');
+        if (commaIdx === -1) {
+            return res.status(500).json({ message: 'Malformed audio data' });
+        }
+
+        const meta = dataUri.slice(5, commaIdx);          // e.g. "audio/ogg;base64"
+        const mimeType = meta.split(';')[0].trim() || 'audio/ogg';
+        const base64Part = dataUri.slice(commaIdx + 1);
+        const buffer = Buffer.from(base64Part, 'base64');
+
+        res.set({
+            'Content-Type': mimeType,
+            'Content-Length': buffer.length,
+            'Accept-Ranges': 'bytes',
+            // Allow the browser to cache this for 1 hour — the content is
+            // immutable (we never overwrite originalAudioUrl in-place).
+            'Cache-Control': 'private, max-age=3600',
+        });
+
+        return res.end(buffer);
+    } catch (err) {
+        console.error('[notes] GET /:id/audio failed:', err);
+        return res.status(500).json({ message: 'Internal server error' });
     }
 });
 
