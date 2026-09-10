@@ -269,28 +269,30 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
     /* ── Render ──────────────────────────────────────────────────────────── */
     return createPortal(
         <AnimatePresence>
-            <motion.div
-                key="share-modal-scrim"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.22 }}
-                className="fixed inset-0 z-[60] bg-ink-950/80 backdrop-blur-md"
-                aria-hidden="true"
-            />
+            <div key="share-modal-container" className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+                {/* Backdrop */}
+                <motion.div
+                    key="share-modal-scrim"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.22 }}
+                    className="absolute inset-0 bg-ink-950/80 backdrop-blur-md"
+                    aria-hidden="true"
+                />
 
-            <motion.div
-                key="share-modal-sheet"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Route voice note to a contact"
-                initial={reduce ? { opacity: 0 } : { opacity: 0, y: 32, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={reduce ? { opacity: 0 } : { opacity: 0, y: 24, scale: 0.97 }}
-                transition={SPRING_SOFT}
-                className="glass fixed inset-x-4 top-1/2 z-[61] mx-auto flex max-h-[82dvh] max-w-lg -translate-y-1/2 flex-col rounded-4xl shadow-glass"
-                style={{ transform: 'translateY(-50%)' }}
-            >
+                {/* Sheet */}
+                <motion.div
+                    key="share-modal-sheet"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Route voice note to a contact"
+                    initial={reduce ? { opacity: 0 } : { opacity: 0, y: 24, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={reduce ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.97 }}
+                    transition={SPRING_SOFT}
+                    className="glass relative z-[61] flex w-full max-h-[85vh] max-w-lg flex-col rounded-4xl shadow-glass overflow-hidden"
+                >
                 <header className="flex shrink-0 items-start justify-between gap-4 px-6 pb-4 pt-6">
                     <div>
                         <div className="flex items-center gap-2">
@@ -440,6 +442,7 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                     )}
                 </AnimatePresence>
             </motion.div>
+            </div>
         </AnimatePresence>,
         document.body
     );

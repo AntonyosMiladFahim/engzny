@@ -194,33 +194,33 @@ export default function BulkAnalyzeModal({ open, onClose, onLaunchSuccess }) {
 
     return createPortal(
         <AnimatePresence>
-            {/* Backdrop */}
-            <motion.div
-                key="analyze-modal-backdrop"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                onClick={onClose}
-                className="fixed inset-0 z-[60] bg-ink-950/80 backdrop-blur-md"
-                aria-hidden="true"
-            />
+            <div key="analyze-modal-container" className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+                {/* Backdrop */}
+                <motion.div
+                    key="analyze-modal-backdrop"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    onClick={onClose}
+                    className="absolute inset-0 bg-ink-950/80 backdrop-blur-md"
+                    aria-hidden="true"
+                />
 
-            {/* Modal Sheet */}
-            <motion.div
-                key="analyze-modal-sheet"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Analyze All Voice Notes"
-                initial={reduce ? { opacity: 0 } : { opacity: 0, y: 28, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={reduce ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.97 }}
-                transition={SPRING_SOFT}
-                className="glass fixed inset-x-4 top-1/2 z-[61] mx-auto flex max-h-[85dvh] max-w-lg -translate-y-1/2 flex-col rounded-4xl shadow-glass"
-                style={{ transform: 'translateY(-50%)' }}
-            >
-                {/* Header */}
-                <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/[0.06] px-6 py-5">
+                {/* Modal Sheet */}
+                <motion.div
+                    key="analyze-modal-sheet"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Analyze All Voice Notes"
+                    initial={reduce ? { opacity: 0 } : { opacity: 0, y: 24, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={reduce ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.96 }}
+                    transition={SPRING_SOFT}
+                    className="glass relative z-[61] flex w-full max-h-[85vh] sm:max-h-[90vh] max-w-lg flex-col rounded-3xl border border-white/10 bg-ink-950/95 shadow-2xl overflow-hidden"
+                >
+                    {/* Header */}
+                    <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/[0.06] px-6 py-5">
                     <div className="flex items-center gap-3">
                         {step === 2 && (
                             <button
@@ -407,20 +407,21 @@ export default function BulkAnalyzeModal({ open, onClose, onLaunchSuccess }) {
                         </div>
 
                         {/* Always-visible Sticky Footer */}
-                        <footer className="shrink-0 border-t border-white/[0.08] bg-ink-950/90 p-4 backdrop-blur-md">
+                        <footer className="shrink-0 border-t border-white/[0.08] bg-ink-950/95 p-4 backdrop-blur-md">
                             <Button
                                 variant="primary"
                                 loading={launching}
                                 loadingLabel="Launching background job…"
                                 onClick={handleStartAnalysis}
-                                className="h-12 w-full text-[14.5px] font-bold shadow-lg"
+                                className="h-12 w-full text-[15px] font-bold shadow-lg"
                             >
-                                Start Background Analysis
+                                Submit & Start Analysis
                             </Button>
                         </footer>
                     </div>
                 )}
             </motion.div>
+            </div>
         </AnimatePresence>,
         document.body
     );
