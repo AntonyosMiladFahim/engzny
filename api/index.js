@@ -15,6 +15,7 @@ const app = express();
 // verification without re-stringifying the already-parsed object
 // (which could produce a different byte sequence than what WAHA signed).
 app.use(express.json({
+    limit: '50mb',
     verify: (req, _res, buf) => {
         req.rawBody = buf;
     },
