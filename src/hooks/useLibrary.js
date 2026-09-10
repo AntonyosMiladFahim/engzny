@@ -82,6 +82,7 @@ export function normalizeNote(raw) {
         folderName: folder && typeof folder === 'object' ? folder.name : raw.folderName ?? null,
         tags: Array.isArray(raw.tags) ? raw.tags : [],
         score: raw.score ?? null,
+        hasAudio: Boolean(raw.hasAudio),
     };
 }
 
