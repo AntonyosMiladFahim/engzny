@@ -4,7 +4,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, RefreshCw, Smartphone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import useWahaPolling from '../hooks/useWahaPolling';
-import useWahaQr from '../hooks/useWahaQr';
+import api from '../services/api';
 import AppShell from '../components/shell/AppShell';
 import UserChip from '../components/shell/UserChip';
 import Brand from '../components/auth/Brand';
@@ -19,8 +19,8 @@ const REDUCED_MOTION_EXIT_MS = 180;
 
 const STEPS = [
     { n: '01', text: 'Open WhatsApp on your phone.' },
-    { n: '02', text: 'Tap Settings, then Linked devices, then Link a device.' },
-    { n: '03', text: 'Point the camera at the code. We take it from there.' },
+    { n: '02', text: 'Tap Settings > Linked devices > Link a device.' },
+    { n: '03', text: 'Tap "Link with phone number instead" and enter the pairing code.' },
 ];
 
 export default function ConnectWhatsApp() {
@@ -31,6 +31,9 @@ export default function ConnectWhatsApp() {
     const [phase, setPhase] = useState('idle'); // idle → locked → sweep
     const [origin, setOrigin] = useState(null);
     const [now, setNow] = useState(() => Date.now());
+    const [phoneNumber, setPhoneNumber] = useState('');
+    const [pairingCode, setPairingCode] = useState(null);
+    const [isRequesting, setIsRequesting] = useState(false);
     const frameRef = useRef(null);
     const timersRef = useRef([]);
 
@@ -63,18 +66,22 @@ export default function ConnectWhatsApp() {
         },
     });
 
-    const qrSource = polling.data?.qr ?? polling.data?.qrCode ?? polling.data?.image ?? null;
-    const qr = useWahaQr({ enabled: polling.isScanning && phase === 'idle', source: qrSource });
-
-    useEffect(() => {
-        if (qr.error) {
-            toast.error(qr.error.message || 'Could not fetch a pairing code.', {
-                key: 'waha-qr',
-                title: 'Pairing code unavailable',
-                action: { label: 'Try again', onClick: qr.refresh },
+    const handleRequestCode = async (e) => {
+        e.preventDefault();
+        if (!phoneNumber) return;
+        setIsRequesting(true);
+        try {
+            const res = await api.post('/waha/pair', { phoneNumber });
+            setPairingCode(res.data.code);
+        } catch (err) {
+            toast.error(err.response?.data?.message || err.message || 'Failed to request pairing code', {
+                key: 'waha-pair-error',
+                title: 'Error requesting code'
             });
+        } finally {
+            setIsRequesting(false);
         }
-    }, [qr.error, qr.refresh]);
+    };
 
     // 1s tick to render "retrying in Ns"
     useEffect(() => {
@@ -133,12 +140,15 @@ export default function ConnectWhatsApp() {
                     <motion.div variants={riseSoft} className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3 text-[13.5px]">
                         <button
                             type="button"
-                            onClick={qr.refresh}
-                            disabled={mode !== 'scan'}
+                            onClick={() => {
+                                setPairingCode(null);
+                                setPhoneNumber('');
+                            }}
+                            disabled={mode !== 'scan' || !pairingCode}
                             className="inline-flex items-center gap-2 rounded-lg text-fog-300 transition-colors duration-150 hover:text-fog-50 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400/60"
                         >
                             <RefreshCw aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />
-                            Refresh code
+                            Reset code
                         </button>
                         <Link
                             to="/dashboard"
@@ -164,13 +174,17 @@ export default function ConnectWhatsApp() {
                     <Scanner
                         ref={frameRef}
                         mode={mode}
-                        qr={qr.qr}
+                        phoneNumber={phoneNumber}
+                        setPhoneNumber={setPhoneNumber}
+                        pairingCode={pairingCode}
+                        isRequesting={isRequesting}
+                        onRequestCode={handleRequestCode}
                         isPolling={polling.isPolling}
                         retryInSec={retryInSec}
                         detail={mode === 'offline' ? polling.error?.message : polling.data?.message}
                         onRetry={polling.refresh}
                         onRefreshQr={() => {
-                            qr.refresh();
+                            setPairingCode(null);
                             polling.refresh();
                         }}
                     />
