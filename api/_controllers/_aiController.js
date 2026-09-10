@@ -22,7 +22,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key');
  */
 async function generateSummary(mimeType, base64Data) {
     // gemini-1.5-flash: fast, cheap, supports inline audio up to ~9 MB
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
     const prompt = 'Please concisely transcribe and summarize this voice note.';
     
     const result = await model.generateContent([
