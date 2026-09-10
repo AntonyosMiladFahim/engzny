@@ -2,18 +2,7 @@
  * src/components/dashboard/ShareRoutingModal.jsx
  * ------------------------------------------------------------------
  * Full-screen intercept modal that appears when the PWA share inbox
- * has pending audio items. Forces the user to route each item to a
- * specific WhatsApp chat before it is uploaded and summarised.
- *
- * Flow (one item at a time):
- *   1. Fetch first page of /api/waha/chats (?limit=25&offset=0).
- *   2. Merge with contacts already known from the DB (so previously-
- *      seen senders always appear, even if not in the live WAHA list).
- *   3. User picks a chat → POST /api/ai/upload with senderId + senderName
- *      → inbox.delete() → next item.
- *   4. "Skip" → upload with no senderId → inbox.delete() → next item.
- *   5. "Load more" → fetch next page and append to list.
- *   6. When all items are processed, call props.onComplete().
+ * has pending audio items.
  * ------------------------------------------------------------------
  */
 
@@ -40,10 +29,6 @@ const PAGE_SIZE = 25;
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
 
-/**
- * Normalise a raw WAHA chat or DB contact into a unified row shape.
- * `source` lets the list render WAHA chats before DB-only contacts.
- */
 function normaliseRow(raw, source = 'db') {
     const id = String(raw.id ?? raw.senderId ?? '');
     const handle = contactHandle(id);
@@ -58,7 +43,6 @@ function normaliseRow(raw, source = 'db') {
     };
 }
 
-/** Trailing-edge debounce. */
 function useDebounced(value, delay = 140) {
     const [settled, setSettled] = useState(value);
     useEffect(() => {
@@ -135,12 +119,6 @@ function ChatRow({ row, onSelect }) {
 
 /* ── "Load more" button ───────────────────────────────────────────────────── */
 
-/**
- * Uses the project's canonical Button component (variant="ghost") so the
- * style is automatically consistent with the rest of the design system.
- * The Button's built-in Loader2 spinner and AnimatePresence label swap
- * handle the loading state — no extra markup needed here.
- */
 function LoadMoreButton({ onLoadMore, loading }) {
     return (
         <motion.div
@@ -166,12 +144,6 @@ function LoadMoreButton({ onLoadMore, loading }) {
 
 /* ── Main modal ───────────────────────────────────────────────────────────── */
 
-/**
- * @param {object}   props
- * @param {object[]} props.items     Pending share-inbox items
- * @param {object[]} props.contacts  Already-known contacts from useContacts()
- * @param {Function} props.onComplete Called when all items have been processed
- */
 export default function ShareRoutingModal({ items, contacts, onComplete }) {
     const reduce = useReducedMotion();
 
@@ -185,13 +157,9 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
     const [connected, setConnected] = useState(true);
     const [chatsLoading, setChatsLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
-    const [hasMore, setHasMore] = useState(false);
+    const [hasMore, setHasMore] = useState(true);
     const [offset, setOffset] = useState(0);
 
-    /**
-     * Fetch one page of chats from the backend and either initialise or
-     * append to the existing list.
-     */
     const fetchPage = useCallback(async (pageOffset, append = false) => {
         const setter = append ? setLoadingMore : setChatsLoading;
         setter(true);
@@ -199,15 +167,14 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
             const res = await api.get('/waha/chats', {
                 params: { limit: PAGE_SIZE, offset: pageOffset },
             });
-            const { chats = [], hasMore: more = false, connected: conn = false } = res.data;
+            const { chats = [], connected: conn = false } = res.data;
             setConnected(conn);
             setWahaChats((prev) => append ? [...prev, ...chats] : chats);
-            // Relax the heuristic: show "Load more" as long as this page
-            // returned at least one row. The previous `=== limit` check was
-            // too strict — WAHA may return fewer rows than the page size even
-            // when more exist (e.g. filtered out on their end). The button
-            // will naturally disappear once a page returns 0 rows.
-            setHasMore(chats.length > 0);
+            if (chats.length > 0) {
+                setHasMore(true);
+            } else {
+                setHasMore(false);
+            }
             setOffset(pageOffset + chats.length);
         } catch {
             setConnected(false);
@@ -216,7 +183,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
         }
     }, []);
 
-    // Initial load on mount.
     useEffect(() => { fetchPage(0, false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleLoadMore = useCallback(() => {
@@ -249,7 +215,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
         );
     }, [rows, debouncedQuery]);
 
-    // Focus search when chats are ready.
     useEffect(() => {
         if (!chatsLoading) setTimeout(() => searchRef.current?.focus(), 120);
     }, [chatsLoading]);
@@ -270,9 +235,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                 await api.post('/ai/upload', {
                     audioBase64: base64,
                     mimeType: fullItem.type || 'audio/ogg',
-                    // Use the file's lastModified date if available (ms since epoch),
-                    // so the note is filed under when the audio was actually created
-                    // rather than the server's insertion time.
                     timestamp: fullItem.blob?.lastModified ?? Date.now(),
                     ...(senderId ? { senderId, senderName } : {}),
                 });
@@ -308,7 +270,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
     /* ── Render ──────────────────────────────────────────────────────────── */
     return createPortal(
         <AnimatePresence>
-            {/* Backdrop */}
             <motion.div
                 key="share-modal-scrim"
                 initial={{ opacity: 0 }}
@@ -319,7 +280,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                 aria-hidden="true"
             />
 
-            {/* Sheet */}
             <motion.div
                 key="share-modal-sheet"
                 role="dialog"
@@ -332,7 +292,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                 className="glass fixed inset-x-4 top-1/2 z-[61] mx-auto flex max-h-[82dvh] max-w-lg -translate-y-1/2 flex-col rounded-4xl shadow-glass"
                 style={{ transform: 'translateY(-50%)' }}
             >
-                {/* Header */}
                 <header className="flex shrink-0 items-start justify-between gap-4 px-6 pb-4 pt-6">
                     <div>
                         <div className="flex items-center gap-2">
@@ -361,7 +320,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                     </button>
                 </header>
 
-                {/* Search */}
                 <div className="shrink-0 px-4 pb-3">
                     <label className="group/search relative flex h-10 items-center">
                         <span className="sr-only">Search chats</span>
@@ -392,7 +350,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                     </label>
                 </div>
 
-                {/* Scrollable list */}
                 <div
                     className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 [scrollbar-width:thin]"
                     style={{
@@ -402,7 +359,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                             'linear-gradient(to bottom, transparent 0, black 8px, black calc(100% - 12px), transparent 100%)',
                     }}
                 >
-                    {/* Skeleton */}
                     {chatsLoading && (
                         <ul className="flex flex-col gap-1 py-2" aria-hidden="true">
                             {[0.7, 0.55, 0.65, 0.5, 0.6].map((w, i) => (
@@ -417,7 +373,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                         </ul>
                     )}
 
-                    {/* Not connected */}
                     {!chatsLoading && !connected && rows.length === 0 && (
                         <div className="flex flex-col items-center gap-3 py-10 text-center">
                             <Link2Off aria-hidden="true" className="h-8 w-8 text-fog-600" strokeWidth={1.5} />
@@ -430,14 +385,12 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                         </div>
                     )}
 
-                    {/* Empty search */}
                     {!chatsLoading && rows.length > 0 && filtered.length === 0 && (
                         <p className="px-3 py-6 text-center text-[13px] text-fog-500">
                             No chats match "<span className="text-fog-300">{query.trim()}</span>"
                         </p>
                     )}
 
-                    {/* Chat rows */}
                     {!chatsLoading && filtered.length > 0 && (
                         <motion.ul
                             className="flex flex-col gap-0.5 py-1"
@@ -466,18 +419,11 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                         </motion.ul>
                     )}
 
-                    {/*
-                      * "Load more" — only visible when:
-                      *   1. The initial load is done (no skeleton).
-                      *   2. Search is empty (pagination makes no sense while filtering).
-                      *   3. The backend says there are more rows (hasMore).
-                      */}
                     {!chatsLoading && !debouncedQuery && hasMore && (
                         <LoadMoreButton onLoadMore={handleLoadMore} loading={loadingMore} />
                     )}
                 </div>
 
-                {/* Uploading overlay */}
                 <AnimatePresence>
                     {uploading && (
                         <motion.div
