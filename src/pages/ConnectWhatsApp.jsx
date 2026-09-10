@@ -18,7 +18,7 @@ export const LOCK_MS = 650;
 const REDUCED_MOTION_EXIT_MS = 180;
 
 const STEPS = [
-    { n: '01', text: 'Open WhatsApp on your phone.' },
+    { n: '01', text: 'Open Whats on your phone.' },
     { n: '02', text: 'Tap Settings > Linked devices > Link a device.' },
     { n: '03', text: 'Tap "Link with phone number instead" and enter the pairing code.' },
 ];
