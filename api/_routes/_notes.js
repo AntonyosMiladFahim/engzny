@@ -97,27 +97,20 @@ function parseLimit(raw) {
  * @returns {Promise<object[]>} lean documents
  */
 async function searchNotes(base, search, limit) {
-    const project = { score: { $meta: 'textScore' } };
-
-    try {
-        const ranked = await VoiceNote.find({ ...base, $text: { $search: search } }, project)
-            .sort({ score: { $meta: 'textScore' }, createdAt: -1 })
-            .limit(limit)
-            .populate('folderId', 'name')
-            .lean();
-
-        if (ranked.length > 0) return ranked;
-    } catch (err) {
-        // A missing text index is a deployment state, not a client error –
-        // degrade to regex rather than 500ing the dashboard.
-        if (err?.code !== ERR_NO_TEXT_INDEX && !/text index required/i.test(err?.message || '')) {
-            throw err;
-        }
-        console.warn('[notes] text index unavailable, falling back to regex search');
-    }
-
     const rx = new RegExp(escapeRegex(search), 'i');
-    return VoiceNote.find({ ...base, $or: [{ summary: rx }, { senderName: rx }] })
+
+    // Aggressive regex search across all textual fields.
+    // Bypasses the $text index entirely to guarantee 100% accuracy across
+    // summary, transcript, and senderName — the $text fallback was silently
+    // omitting transcript matches because that field wasn't always in the index.
+    return VoiceNote.find({
+        ...base,
+        $or: [
+            { summary:    rx },
+            { transcript: rx },
+            { senderName: rx },
+        ],
+    })
         .sort({ createdAt: -1 })
         .limit(limit)
         .populate('folderId', 'name')
