@@ -1,38 +1,13 @@
 /**
  * src/components/dashboard/NoteCard.jsx
  * ------------------------------------------------------------------
- * A voice-note summary card. Weight is communicated through motion: a
- * pointer-driven 3.5° tilt with a following sheen (desktop only), a 3px lift
- * on hover and a 0.8% compress on press.
- *
- * `query` is the live deep-search term; matches are marked in the sender line
- * and the summary.
- *
- * `onSelectContact` — fires with `note.senderId` when the sender name/avatar
- * is clicked. Notes with no senderId keep a plain label.
- *
- * `onDelete` — fires with `note.id` after the note has been successfully
- * deleted from the server. NotesGrid optimistically removes the card.
- *
- * AUDIO PLAYER
- * ------------
- * When `note.hasAudio` is true a Play/Pause button overlays the waveform.
- * Clicking it creates a single HTMLAudioElement whose src is set lazily to
- * `/api/notes/{id}/audio` (the dedicated streaming endpoint — no base64 is
- * ever served to the bulk fetch). The waveform bars pulse in sync while audio
- * plays by reading `audioRef.currentTime` on a rAF loop.
- *
- * RTL TEXT
- * --------
- * `dir="auto"` is applied to the summary and transcript paragraphs so the
- * browser's bidi algorithm aligns Arabic text right and English text left
- * without any hardcoded direction.
+ * A voice-note summary card.
  * ------------------------------------------------------------------
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ChevronDown, Pause, Play, Trash2 } from 'lucide-react';
+import { ChevronDown, Pause, Play, Trash2, Loader2 } from 'lucide-react';
 import useTilt from '../../hooks/useTilt';
 import cx from '../ui/cx';
 import Highlight from '../ui/Highlight';
@@ -86,30 +61,9 @@ function DeleteConfirm({ onConfirm, onCancel, loading }) {
 /*  Audio player hook                                                          */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Manages a single HTMLAudioElement per note.
- *
- * SECURE FETCHING
- * ---------------
- * Native browser `<audio>` elements and `new Audio(url)` do NOT attach the
- * JWT `Authorization` header, so a direct URL to `/api/notes/:id/audio` always
- * returns 401. Instead we:
- *   1. Fetch the bytes via Axios (which attaches the Bearer token automatically).
- *   2. Wrap the response Blob in a local object URL.
- *   3. Pass that object URL to `new Audio(url)` — the browser plays from the
- *      same-origin blob: URL without any additional auth.
- *   4. Revoke the object URL on unmount to free memory.
- *
- * The fetch is lazy: it only fires the first time the user taps Play, so cards
- * that are never played don't incur any network cost.
- *
- * Returns { isPlaying, isLoading, progress, toggle }
- *   isLoading — true while the first authenticated fetch is in flight.
- *   progress  — 0–1, updated on a rAF loop while playing.
- */
 function useAudioPlayer(noteId, hasAudio) {
     const audioRef   = useRef(null);
-    const blobUrlRef = useRef(null); // held so we can revoke on unmount
+    const blobUrlRef = useRef(null); 
     const rafRef     = useRef(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -119,7 +73,6 @@ function useAudioPlayer(noteId, hasAudio) {
     const onPause = useCallback(() => setIsPlaying(false), []);
     const onEnded = useCallback(() => { setIsPlaying(false); setProgress(0); }, []);
 
-    // rAF loop: tick progress while playing.
     useEffect(() => {
         if (!isPlaying) { cancelAnimationFrame(rafRef.current); return; }
         const tick = () => {
@@ -131,7 +84,6 @@ function useAudioPlayer(noteId, hasAudio) {
         return () => cancelAnimationFrame(rafRef.current);
     }, [isPlaying]);
 
-    // Cleanup on unmount: pause, detach events, revoke blob URL.
     useEffect(() => {
         return () => {
             cancelAnimationFrame(rafRef.current);
@@ -144,27 +96,25 @@ function useAudioPlayer(noteId, hasAudio) {
             }
             if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
         };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, []);
 
     const toggle = useCallback(async () => {
         if (!hasAudio || isLoading) return;
 
-        // If we already have a loaded element, just play/pause.
         if (audioRef.current) {
             const el = audioRef.current;
             el.paused ? el.play().catch(() => {}) : el.pause();
             return;
         }
 
-        // ── First play: authenticated fetch → blob → object URL ──────────
         setIsLoading(true);
         try {
-            const res = await api.get(`/notes/${noteId}/audio`, { responseType: 'blob' });
-            const url  = URL.createObjectURL(res.data);
+            const res = await api.get('/notes/' + noteId + '/audio', { responseType: 'blob' });
+            const url = URL.createObjectURL(res.data);
             blobUrlRef.current = url;
 
-            const el   = new Audio(url);
-            el.preload  = 'auto';
+            const el = new Audio(url);
+            el.preload = 'auto';
             el.addEventListener('play',  onPlay);
             el.addEventListener('pause', onPause);
             el.addEventListener('ended', onEnded);
@@ -209,7 +159,6 @@ export default function NoteCard({
     }, [note.summary, term]);
     const open = expanded || matchedDeep;
 
-    // ── Delete state machine ───────────────────────────────────────────────
     const [deleteState, setDeleteState] = useState('idle');
 
     const handleDeleteConfirm = async () => {
@@ -223,10 +172,8 @@ export default function NoteCard({
         }
     };
 
-    // ── Audio player ───────────────────────────────────────────────────────
     const { isPlaying, isLoading, progress, toggle: toggleAudio } = useAudioPlayer(note.id, note.hasAudio);
 
-    // A note is "attributable" when it arrived via WhatsApp (senderId present).
     const clickableSender = Boolean(note.senderId && onSelectContact);
 
     return (
@@ -246,7 +193,6 @@ export default function NoteCard({
                 className="pointer-events-none absolute inset-0 rounded-3xl opacity-0 transition-opacity duration-300 group-hover:opacity-100"
             />
 
-            {/* ── Delete control — top-right corner ────────────────────── */}
             {onDelete && (
                 <div className="absolute right-3.5 top-3.5 z-10">
                     <AnimatePresence mode="wait" initial={false}>
@@ -276,9 +222,7 @@ export default function NoteCard({
                 </div>
             )}
 
-            {/* ── Header ────────────────────────────────────────────────── */}
             <header className="relative flex items-center gap-3">
-                {/* Avatar / sender chip */}
                 <button
                     type="button"
                     onClick={clickableSender ? () => onSelectContact(note.senderId) : undefined}
@@ -324,7 +268,6 @@ export default function NoteCard({
                 )}
             </header>
 
-            {/* ── Body ──────────────────────────────────────────────────── */}
             <div className="relative mt-4 flex-1">
                 {note.title && (
                     <p className="mb-1 text-[15px] font-bold tracking-[-0.01em] text-fog-50">
@@ -332,11 +275,6 @@ export default function NoteCard({
                     </p>
                 )}
 
-                {/*
-                  * dir="auto" lets the browser's bidi algorithm decide alignment.
-                  * Arabic paragraphs align right; English paragraphs align left.
-                  * No manual RTL detection needed.
-                  */}
                 <p
                     dir="auto"
                     className={cx('text-[14px] leading-relaxed text-fog-200', !open && 'line-clamp-3')}
@@ -365,9 +303,9 @@ export default function NoteCard({
                 </AnimatePresence>
             </div>
 
-            {/*   Footer: player + waveform + tags   */}
+            {/* Footer */}
             <footer className="relative mt-4 flex items-center gap-3">
-                {/* 1. The Play Button (Moved OUTSIDE the waveform div) */}
+                {/* 1. Play Button FIRST */}
                 {note.hasAudio && (
                     <button
                         type="button"
@@ -375,18 +313,31 @@ export default function NoteCard({
                             e.stopPropagation();
                             toggleAudio();
                         }}
-                        aria-label={isPlaying ? 'Pause voice note' : 'Play voice note'}
+                        disabled={isLoading}
+                        aria-label={isLoading ? 'Loading audio' : isPlaying ? 'Pause voice note' : 'Play voice note'}
                         className={cx(
                             'relative grid h-8 w-8 shrink-0 place-items-center rounded-full',
                             'shadow-hairline outline-none transition-[transform,background-color,box-shadow] duration-150 ease-snap',
                             'focus-visible:ring-2 focus-visible:ring-signal-400/60',
-                            isPlaying
+                            isLoading && 'cursor-wait',
+                            !isLoading && isPlaying
                                 ? 'scale-105 bg-signal-400 text-ink-950 shadow-signal-sm'
                                 : 'bg-white/[0.07] text-fog-300 hover:scale-105 hover:bg-signal-400/[0.15] hover:text-signal-300 group-hover:bg-white/[0.10]'
                         )}
                     >
                         <AnimatePresence mode="wait" initial={false}>
-                            {isPlaying ? (
+                            {isLoading ? (
+                                <motion.span
+                                    key="loading"
+                                    initial={reduce ? false : { scale: 0.6, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    exit={reduce ? undefined : { scale: 0.6, opacity: 0 }}
+                                    transition={{ duration: 0.1 }}
+                                    className="grid place-items-center"
+                                >
+                                    <Loader2 className="h-4 w-4 animate-spin text-fog-400" strokeWidth={2.5} />
+                                </motion.span>
+                            ) : isPlaying ? (
                                 <motion.span
                                     key="pause"
                                     initial={reduce ? false : { scale: 0.6, opacity: 0 }}
@@ -413,9 +364,8 @@ export default function NoteCard({
                     </button>
                 )}
 
-                {/* 2. The Waveform */}
+                {/* 2. Waveform */}
                 <div className="relative flex h-7 flex-1 items-center gap-[3px]" aria-hidden="true">
-                    {/* Progress sweep */}
                     {isPlaying && (
                         <motion.span
                             className="pointer-events-none absolute inset-y-0 left-0 rounded-full bg-signal-400/[0.07]"
@@ -474,7 +424,6 @@ export default function NoteCard({
                     </button>
                 )}
             </footer>
-
         </motion.article>
     );
 }
