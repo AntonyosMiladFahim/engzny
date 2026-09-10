@@ -1,0 +1,96 @@
+/*
+ * Global theme sheet. Imported once by AuthLayout (the only place allowed this
+ * round). Ideally this line lives in src/main.jsx so every route gets it on a
+ * hard refresh:  import './components/theme/tailwind.css';
+ */
+@import url('https://fonts.googleapis.com/css2?family=Cantarell:ital,wght@0,400;0,700;1,400;1,700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        color-scheme: dark;
+    }
+
+    html {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+        font-feature-settings: 'kern' 1, 'liga' 1;
+    }
+
+    body {
+        @apply bg-ink-950 font-sans text-fog-100;
+    }
+
+    ::selection {
+        @apply bg-signal-400/30 text-fog-50;
+    }
+
+    /* Kill the yellow autofill flash without fighting the browser. */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus {
+        -webkit-text-fill-color: theme('colors.fog.50');
+        caret-color: theme('colors.fog.50');
+        box-shadow: 0 0 0 1000px theme('colors.ink.900') inset;
+        transition: background-color 9999s ease-out 0s;
+    }
+
+    /* Native password reveal buttons clash with ours. */
+    input::-ms-reveal,
+    input::-ms-clear {
+        display: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
+    }
+}
+
+@layer components {
+    /* Frosted panel. The ::before draws a 1px light catch along the top edge. */
+    .glass {
+        @apply relative border border-white/[0.08] bg-white/[0.035] shadow-glass backdrop-blur-2xl;
+    }
+
+    .glass::before {
+        content: '';
+        @apply pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent;
+    }
+
+    .glass-sm {
+        @apply relative border border-white/[0.07] bg-white/[0.03] shadow-glass-sm backdrop-blur-xl;
+    }
+
+    .eyebrow {
+        @apply font-mono text-eyebrow uppercase text-fog-400;
+    }
+
+    .hairline-y {
+        @apply relative;
+    }
+
+    .hairline-y::after {
+        content: '';
+        @apply absolute inset-y-8 right-0 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent;
+    }
+}
+
+@layer utilities {
+    .text-balance {
+        text-wrap: balance;
+    }
+
+    .mask-fade-edges {
+        mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 30%, transparent 100%);
+    }
+}
