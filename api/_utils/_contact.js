@@ -90,7 +90,10 @@ function phoneFromChatId(value) {
 function formatHandle(value) {
     const phone = phoneFromChatId(value);
     if (phone) return `+${phone}`;
-    return chatId(value);
+    // Return null for any id that isn't a real dialable number — this includes
+    // @lid (opaque privacy ids), @g.us groups, @broadcast, and anything else
+    // non-phone-shaped. The UI suppresses the subtitle DOM element on null.
+    return null;
 }
 
 /**
