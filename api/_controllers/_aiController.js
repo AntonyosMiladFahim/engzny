@@ -77,12 +77,53 @@ function extractSender(payload = {}) {
 }
 
 /**
- * Helper to call Gemini API and summarize the audio buffer.
+ * Call Gemini and return { transcript, summary } for the given audio.
+ *
+ * PROMPT DESIGN
+ * -------------
+ * We instruct the model to respond with a *single* JSON object containing
+ * exactly two keys:
+ *
+ *   transcript – the verbatim spoken words in the original language (Arabic,
+ *                English, or code-switched). NO paraphrasing, NO omissions.
+ *   summary    – a concise, clean digest in the same language as the speaker.
+ *
+ * We explicitly:
+ *   - Forbid markdown syntax (**, __, >, #, -).
+ *   - Forbid English meta-text ("Transcription:", "Summary:", "Here is…").
+ *   - Require only the JSON object in the response, nothing before or after.
+ *
+ * PARSING
+ * -------
+ * Some model versions wrap the JSON in a ```json … ``` code fence even when
+ * asked not to. We strip the fence before parsing. If parsing still fails we
+ * fall back gracefully: the raw text is stored as the summary and transcript
+ * is left empty, so the note is never silently lost.
+ *
+ * @param {string} mimeType  MIME type of the audio (e.g. 'audio/ogg')
+ * @param {string} base64Data  base64-encoded audio bytes
+ * @returns {Promise<{ transcript: string, summary: string }>}
  */
 async function generateSummary(mimeType, base64Data) {
-    // gemini-1.5-flash: fast, cheap, supports inline audio up to ~9 MB
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
-    const prompt = 'Please concisely transcribe and summarize this voice note.';
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' });
+
+    const prompt = `
+You are an expert multilingual transcription and summarization assistant.
+Listen to the audio and respond with ONLY a JSON object — no text before or after it, no markdown, no code fences.
+
+The JSON must have exactly these two keys:
+  "transcript": the verbatim words spoken, preserved in the original language (Arabic, English, or mixed — do not translate).
+  "summary":    a concise summary (2–5 sentences) of the main point, written in the same language as the speaker.
+
+Rules you MUST follow:
+  - Do NOT use any markdown syntax (no **, __, >, #, or - lists).
+  - Do NOT add English wrapper text like "Here is the transcript:", "Transcription:", "Summary:", etc.
+  - Do NOT translate the content into English if it was spoken in Arabic.
+  - If the audio is inaudible or empty, set both keys to an empty string.
+
+Respond with only the JSON object. Example format:
+{"transcript":"…verbatim words…","summary":"…concise summary…"}
+`.trim();
 
     const result = await model.generateContent([
         prompt,
@@ -93,7 +134,28 @@ async function generateSummary(mimeType, base64Data) {
             },
         },
     ]);
-    return result.response.text();
+
+    const raw = result.response.text();
+
+    // Strip markdown code fences the model may add despite instructions.
+    const cleaned = raw
+        .trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```\s*$/, '')
+        .trim();
+
+    try {
+        const parsed = JSON.parse(cleaned);
+        return {
+            transcript: typeof parsed.transcript === 'string' ? parsed.transcript.trim() : '',
+            summary:    typeof parsed.summary    === 'string' ? parsed.summary.trim()    : '',
+        };
+    } catch (parseErr) {
+        // The model returned something unparseable. Keep the raw text in
+        // summary so the note is not silently lost; transcript will be empty.
+        console.warn('[ai] JSON parse failed, storing raw text as summary:', parseErr.message);
+        return { transcript: '', summary: cleaned };
+    }
 }
 
 /**
@@ -123,8 +185,8 @@ async function uploadVoiceNote(req, res) {
             }
         }
 
-        // 2. Generate Summary via Gemini
-        const summary = await generateSummary(mimeType, audioBase64);
+        // 2. Generate transcript + summary via Gemini
+        const { transcript, summary } = await generateSummary(mimeType, audioBase64);
 
         // 3. Save to Database
         // For now, pending architectural decision on S3, we strictly store the base64 payload
@@ -140,6 +202,7 @@ async function uploadVoiceNote(req, res) {
             senderId: firstText(senderId) || null,
             senderName: firstText(senderName),
             originalAudioUrl,
+            transcript,
             summary,
         });
 
@@ -186,8 +249,8 @@ async function wahaWebhook(req, res) {
         const { mimetype, buffer } = await waha.downloadMedia(session, messageId);
         const base64Data = buffer.toString('base64');
 
-        // 2. Generate Summary via Gemini
-        const summary = await generateSummary(mimetype, base64Data);
+        // 2. Generate transcript + summary via Gemini
+        const { transcript, summary } = await generateSummary(mimetype, base64Data);
 
         // 3. Save to Database
         const originalAudioUrl = `data:${mimetype};base64,${base64Data}`;
@@ -197,10 +260,12 @@ async function wahaWebhook(req, res) {
             senderId,
             senderName,
             originalAudioUrl,
+            transcript,
             summary,
         });
 
         // 4. Reply strictly back to the original req.user.id (session)
+        // Use the clean summary (not the full transcript) for the WhatsApp reply.
         await waha.sendText(session, replyChatId, `*Summary:*\n${summary}`);
 
     } catch (err) {

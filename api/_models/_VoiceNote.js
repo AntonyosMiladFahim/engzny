@@ -92,6 +92,19 @@ const voiceNoteSchema = new Schema(
             trim: true,
             default: '',
         },
+
+        /**
+         * Verbatim transcript of the spoken words, in the original language.
+         * Produced by the AI alongside the summary. Stored separately so the
+         * UI can offer both a clean readable digest (summary) and the raw
+         * words for accuracy verification or copy-paste. Optional: left empty
+         * when the AI cannot determine the spoken content.
+         */
+        transcript: {
+            type: String,
+            trim: true,
+            default: '',
+        },
     },
     {
         timestamps: true,
@@ -133,10 +146,10 @@ voiceNoteSchema.index({ userId: 1, senderId: 1, createdAt: -1 });
  *     partial-word / prefix cases a text index cannot serve.
  */
 voiceNoteSchema.index(
-    { senderName: 'text', summary: 'text' },
+    { senderName: 'text', transcript: 'text', summary: 'text' },
     {
         name: 'voicenote_search',
-        weights: { senderName: 8, summary: 4 },
+        weights: { senderName: 8, transcript: 6, summary: 4 },
         default_language: 'none',
     }
 );
