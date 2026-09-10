@@ -27,7 +27,7 @@ const MODE_LABEL = {
  * react to it. `ref` lands on the frame so callers can measure its centre.
  */
 const Scanner = forwardRef(function Scanner(
-    { mode = 'loading', qr, retryInSec, isPolling, onRetry, onRefreshQr, detail },
+    { mode = 'loading', phoneNumber, setPhoneNumber, pairingCode, isRequesting, onRequestCode, retryInSec, isPolling, onRetry, onRefreshQr, detail },
     ref
 ) {
     const reduce = useReducedMotion();
@@ -67,41 +67,36 @@ const Scanner = forwardRef(function Scanner(
                     <div aria-hidden="true" className="absolute inset-0 bg-grid bg-[length:16px_16px] opacity-40" />
 
                     <AnimatePresence initial={false}>
-                        {mode === 'scan' && qr && (
-                            <motion.div key="qr" {...fade} className="absolute inset-3 sm:inset-4">
-                                <div className="relative h-full w-full overflow-hidden rounded-xl bg-fog-50 p-2.5 shadow-[0_0_0_1px_rgba(0,0,0,0.25)]">
-                                    <img
-                                        src={qr}
-                                        alt="WhatsApp pairing QR code"
-                                        draggable={false}
-                                        className="h-full w-full select-none object-contain [image-rendering:pixelated]"
-                                    />
-                                    {!reduce && (
-                                        <motion.div
-                                            aria-hidden="true"
-                                            className="pointer-events-none absolute inset-x-0 top-0 h-[22%] mix-blend-multiply"
-                                            animate={{ y: ['-110%', '560%'] }}
-                                            transition={{ duration: 2.4, repeat: Infinity, repeatDelay: 0.5, ease: [0.45, 0, 0.55, 1] }}
-                                        >
-                                            <div className="h-full w-full bg-gradient-to-b from-transparent via-signal-500/55 to-transparent" />
-                                            <div className="absolute inset-x-0 top-1/2 h-px bg-signal-600/80" />
-                                        </motion.div>
-                                    )}
-                                </div>
+                        {mode === 'scan' && pairingCode && (
+                            <motion.div key="pairing-code" {...fade} className="absolute inset-3 sm:inset-4 flex flex-col items-center justify-center rounded-xl bg-ink-950 shadow-[0_0_0_1px_rgba(255,255,255,0.05)]">
+                                <span className="text-4xl font-mono font-bold tracking-widest text-signal-400">
+                                    {pairingCode}
+                                </span>
+                                <Caption>Enter this code on your phone</Caption>
                             </motion.div>
                         )}
 
-                        {mode === 'scan' && !qr && (
-                            <motion.div key="qr-loading" {...fade} className="absolute inset-3 sm:inset-4">
-                                <div className="relative h-full w-full overflow-hidden rounded-xl bg-white/[0.04] shadow-hairline">
-                                    <div className="absolute inset-0 grid grid-cols-6 gap-1 p-3 opacity-40">
-                                        {Array.from({ length: 36 }).map((_, i) => (
-                                            <span key={i} className={cx('rounded-[3px]', (i * 7) % 3 === 0 ? 'bg-white/20' : 'bg-white/5')} />
-                                        ))}
+                        {mode === 'scan' && !pairingCode && (
+                            <motion.div key="phone-input" {...fade} className="absolute inset-3 sm:inset-4 flex flex-col justify-center px-6">
+                                <form onSubmit={onRequestCode} className="flex flex-col gap-4">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label htmlFor="waha-phone" className="text-xs font-medium text-fog-400 text-center">
+                                            WhatsApp Phone Number
+                                        </label>
+                                        <input
+                                            id="waha-phone"
+                                            type="tel"
+                                            value={phoneNumber}
+                                            onChange={(e) => setPhoneNumber(e.target.value)}
+                                            placeholder="e.g. 201012345678"
+                                            required
+                                            className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-fog-50 text-center font-mono focus:outline-none focus:ring-2 focus:ring-signal-400/60"
+                                        />
                                     </div>
-                                    <div className="absolute inset-0 animate-shimmer bg-gradient-to-r from-transparent via-white/[0.08] to-transparent" />
-                                    <Caption>Generating pairing code…</Caption>
-                                </div>
+                                    <Button type="submit" disabled={isRequesting} className="w-full justify-center">
+                                        {isRequesting ? 'Requesting...' : 'Get Pairing Code'}
+                                    </Button>
+                                </form>
                             </motion.div>
                         )}
 
@@ -175,7 +170,7 @@ const Scanner = forwardRef(function Scanner(
                     {MODE_LABEL[mode] ?? mode}
                 </span>
                 <span className="text-fog-500">
-                    {locked ? 'session ok' : mode === 'scan' ? 'code rotates ~20s' : mode === 'offline' ? 'backoff' : 'poll 3s'}
+                    {locked ? 'session ok' : mode === 'scan' ? 'enter pairing code' : mode === 'offline' ? 'backoff' : 'poll 3s'}
                 </span>
             </div>
         </div>
