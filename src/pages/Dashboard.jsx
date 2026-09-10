@@ -53,6 +53,7 @@ export default function Dashboard() {
     const senderId = params.get('sender');
 
     const [query, setQuery] = useState('');
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [installable, setInstallable] = useState(() => !!window.engzny?.installPrompt);
     const searchRef = useRef(null);
@@ -211,7 +212,9 @@ export default function Dashboard() {
         if (senderId || folderId) {
             setParams({}, { replace: true });
         }
-        // Give React one tick to re-render the (now-visible) search input
+        // Force the search bar to mount before we try to focus it.
+        setIsSearchOpen(true);
+        // Give React one tick to render the (now-visible) search input
         // before we focus it, so the ref is attached.
         requestAnimationFrame(() => {
             searchRef.current?.focus();
@@ -251,7 +254,7 @@ export default function Dashboard() {
      * keeps the search bar rendered even though `inChatTimeline` is false.
      */
     const inChatTimeline = Boolean(senderId || folderId);
-    const showSearch     = inChatTimeline || Boolean(query.trim());
+    const showSearch     = inChatTimeline || Boolean(query.trim()) || isSearchOpen;
 
     const scopeLabel = activeContact
         ? activeContact.name
@@ -418,6 +421,7 @@ export default function Dashboard() {
                                                 type="button"
                                                 onClick={() => {
                                                     setQuery('');
+                                                    setIsSearchOpen(false);
                                                     searchRef.current?.focus();
                                                 }}
                                                 aria-label="Clear search"
