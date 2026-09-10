@@ -222,4 +222,41 @@ router.get('/', requireAuth, async (req, res) => {
     }
 });
 
+/**
+ * DELETE /api/notes/:id
+ *
+ * Permanently remove a single voice note belonging to the authenticated user.
+ *
+ * Tenant isolation is enforced by the compound `{ _id, userId }` filter in
+ * `findOneAndDelete` — a malicious actor who guesses another user's note id
+ * will receive a 404, not a 200 or 403, so the existence of the note is not
+ * revealed. We intentionally collapse "not found" and "not yours" into the
+ * same response.
+ */
+router.delete('/:id', requireAuth, async (req, res) => {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+        return res.status(400).json({ message: 'Invalid note ID' });
+    }
+
+    try {
+        await connectDB();
+
+        const deleted = await VoiceNote.findOneAndDelete({
+            _id: id,
+            userId: req.user._id,
+        });
+
+        if (!deleted) {
+            return res.status(404).json({ message: 'Note not found' });
+        }
+
+        return res.status(200).json({ message: 'Deleted', id });
+    } catch (err) {
+        console.error('[notes] DELETE failed:', err);
+        return res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
 module.exports = router;

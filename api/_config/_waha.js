@@ -212,6 +212,34 @@ async function requestPairingCode(sessionName, phoneNumber) {
     });
 }
 
+/**
+ * GET /api/{session}/chats – list the active chats for a session.
+ *
+ * Returns an array of raw WAHA chat objects. The controller projects only the
+ * fields the UI needs so WAHA internals never reach the browser.
+ *
+ * `limit` defaults to 50 — enough to populate the share-routing modal without
+ * saturating a slow Vercel lambda with a megabyte of chat history.
+ *
+ * When the session does not yet exist (404) or WAHA reports the session is not
+ * WORKING, we return an empty array rather than throwing. The UI shows an
+ * "Link WhatsApp first" empty state instead of an error toast.
+ *
+ * @param {string} sessionName
+ * @param {number} [limit=50]
+ * @returns {Promise<object[]>} raw WAHA chat objects (may be empty)
+ */
+async function getChats(sessionName, limit = 50) {
+    return call(async (http) => {
+        const res = await http.get(`/api/${encodeURIComponent(sessionName)}/chats`, {
+            params: { limit },
+        });
+        // A 404 means "no such session" — not an error for our purposes.
+        if (res.status === 404) return [];
+        return unwrap(res);
+    });
+}
+
 module.exports = {
     SessionStatus,
     WahaError,
@@ -222,4 +250,5 @@ module.exports = {
     requestPairingCode,
     sendText,
     downloadMedia,
+    getChats,
 };

@@ -281,10 +281,66 @@ async function wahaWebhook(req, res) {
     });
 }
 
+/**
+ * GET /api/waha/chats   (requireAuth)
+ *
+ * Returns the active WhatsApp chats for the authenticated user's session,
+ * projected to the minimal shape the share-routing modal needs:
+ *
+ *   { id, name, picture, lastMessage: { body, timestamp } | null }
+ *
+ * Design decisions:
+ *   - Empty array (not an error) when the session does not exist or is not yet
+ *     WORKING. The modal renders a "Link WhatsApp first" callout in that case.
+ *   - `picture` may be null even for existing chats (privacy settings); the UI
+ *     falls back to an initials badge.
+ *   - We limit to 50 rows by default (via the helper) to bound lambda memory.
+ *
+ * Response:
+ *   200 { chats: [...], connected: true }
+ *   200 { chats: [],   connected: false }   – session absent / not WORKING
+ *   502 { message }                          – WAHA unreachable
+ */
+async function getChats(req, res) {
+    const sessionName = sessionNameFor(req);
+
+    try {
+        // Fast-path: if the session is not WORKING the chats endpoint would
+        // return an empty list anyway — we skip the second round-trip.
+        const session = await waha.getSession(sessionName);
+        if (!session || session.status !== SessionStatus.WORKING) {
+            return res.status(200).json({ chats: [], connected: false });
+        }
+
+        const raw = await waha.getChats(sessionName);
+
+        const chats = (Array.isArray(raw) ? raw : []).map((c) => ({
+            // Stable grouping key — same id format as senderId on VoiceNote.
+            id: c.id?._serialized ?? c.id ?? null,
+            name: c.name ?? c.displayName ?? null,
+            // WAHA places the avatar URL in `picture`.
+            picture: c.picture ?? null,
+            lastMessage: c.lastMessage
+                ? {
+                      body: typeof c.lastMessage.body === 'string'
+                          ? c.lastMessage.body.slice(0, 120)
+                          : null,
+                      timestamp: c.lastMessage.timestamp ?? null,
+                  }
+                : null,
+        })).filter((c) => c.id);
+
+        return res.status(200).json({ chats, connected: true });
+    } catch (err) {
+        return handleError(res, err, 'getChats');
+    }
+}
+
 module.exports = {
     wahaWebhook,
     requestPairingCode,
     checkStatus,
+    getChats,
     // Exported for unit tests.
     _internal: { sessionNameFor, toStatusResponse },
 };
