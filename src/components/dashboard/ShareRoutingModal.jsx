@@ -5,14 +5,15 @@
  * has pending audio items. Forces the user to route each item to a
  * specific WhatsApp chat before it is uploaded and summarised.
  *
- * Flow (single item pass):
- *   1. Fetch /api/waha/chats — the user's live WAHA chat list.
- *   2. Merge with the contacts already known from the DB (so
- *      previously-seen senders always appear even if not in WAHA).
- *   3. User picks a chat → upload via POST /api/ai/upload with
- *      senderId + senderName set → delete the item from the inbox.
- *   4. "Assign later / Skip" → upload with no senderId → delete.
- *   5. When all items are processed, call props.onComplete().
+ * Flow (one item at a time):
+ *   1. Fetch first page of /api/waha/chats (?limit=25&offset=0).
+ *   2. Merge with contacts already known from the DB (so previously-
+ *      seen senders always appear, even if not in the live WAHA list).
+ *   3. User picks a chat → POST /api/ai/upload with senderId + senderName
+ *      → inbox.delete() → next item.
+ *   4. "Skip" → upload with no senderId → inbox.delete() → next item.
+ *   5. "Load more" → fetch next page and append to list.
+ *   6. When all items are processed, call props.onComplete().
  * ------------------------------------------------------------------
  */
 
@@ -25,20 +26,22 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Link2Off, Loader2, Mic, Search, SkipForward, X } from 'lucide-react';
+import { ChevronDown, Link2Off, Loader2, Mic, Search, SkipForward, X } from 'lucide-react';
 import api from '../../services/api';
 import { initials, contactHandle } from '../format';
 import { SPRING_SNAPPY, SPRING_SOFT } from '../motion';
 import { toast } from '../ui/toast';
 import cx from '../ui/cx';
 
-/* -------------------------------------------------------------------------- */
-/*  Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
+/* ── Constants ────────────────────────────────────────────────────────────── */
+
+const PAGE_SIZE = 25;
+
+/* ── Helpers ──────────────────────────────────────────────────────────────── */
 
 /**
  * Normalise a raw WAHA chat or DB contact into a unified row shape.
- * The `source` field lets the list render WAHA chats before DB-only contacts.
+ * `source` lets the list render WAHA chats before DB-only contacts.
  */
 function normaliseRow(raw, source = 'db') {
     const id = String(raw.id ?? raw.senderId ?? '');
@@ -50,11 +53,11 @@ function normaliseRow(raw, source = 'db') {
         handle: handle && handle !== name ? handle : null,
         picture: raw.picture ?? null,
         lastMessage: raw.lastMessage ?? null,
-        source, // 'waha' | 'db'
+        source,
     };
 }
 
-/** Debounce a value by `delay` ms. */
+/** Trailing-edge debounce. */
 function useDebounced(value, delay = 140) {
     const [settled, setSettled] = useState(value);
     useEffect(() => {
@@ -65,13 +68,10 @@ function useDebounced(value, delay = 140) {
     return settled;
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Avatar                                                                     */
-/* -------------------------------------------------------------------------- */
+/* ── Avatar ───────────────────────────────────────────────────────────────── */
 
 function Avatar({ name, picture, size = 44 }) {
     const [imgError, setImgError] = useState(false);
-
     if (picture && !imgError) {
         return (
             <img
@@ -83,7 +83,6 @@ function Avatar({ name, picture, size = 44 }) {
             />
         );
     }
-
     return (
         <span
             aria-hidden="true"
@@ -95,11 +94,9 @@ function Avatar({ name, picture, size = 44 }) {
     );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Chat row                                                                   */
-/* -------------------------------------------------------------------------- */
+/* ── Chat row ─────────────────────────────────────────────────────────────── */
 
-function ChatRow({ row, onSelect, layoutId }) {
+function ChatRow({ row, onSelect }) {
     return (
         <motion.li layout="position" transition={SPRING_SNAPPY}>
             <button
@@ -107,14 +104,11 @@ function ChatRow({ row, onSelect, layoutId }) {
                 onClick={() => onSelect(row)}
                 className="group/row relative flex w-full items-center gap-3.5 rounded-2xl px-3 py-2.5 text-left outline-none transition-colors duration-150 hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-signal-400/60 active:scale-[0.985]"
             >
-                {/* Hover plate */}
                 <span
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-0 rounded-2xl bg-white/[0.035] opacity-0 transition-opacity duration-150 group-hover/row:opacity-100"
                 />
-
                 <Avatar name={row.name} picture={row.picture} size={44} />
-
                 <span className="relative min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-2">
                         <span className="block truncate text-[14px] font-semibold leading-snug text-fog-50">
@@ -138,59 +132,115 @@ function ChatRow({ row, onSelect, layoutId }) {
     );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Main modal                                                                 */
-/* -------------------------------------------------------------------------- */
+/* ── "Load more" button ───────────────────────────────────────────────────── */
+
+function LoadMoreButton({ onLoadMore, loading }) {
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={SPRING_SNAPPY}
+            className="flex justify-center pb-2 pt-1"
+        >
+            <button
+                type="button"
+                onClick={onLoadMore}
+                disabled={loading}
+                className={cx(
+                    'group inline-flex items-center gap-2 rounded-xl px-4 py-2',
+                    'bg-white/[0.05] shadow-hairline ring-1 ring-white/[0.07]',
+                    'font-mono text-[11px] uppercase tracking-[0.13em] text-fog-400',
+                    'transition-[background-color,color,opacity] duration-150',
+                    'hover:bg-white/[0.08] hover:text-fog-100',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400/60',
+                    'disabled:cursor-wait disabled:opacity-50'
+                )}
+            >
+                {loading ? (
+                    <Loader2
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 animate-spin-slow text-signal-400"
+                        strokeWidth={2}
+                    />
+                ) : (
+                    <ChevronDown
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 transition-transform duration-150 group-hover:translate-y-[1px]"
+                        strokeWidth={2}
+                    />
+                )}
+                {loading ? 'Loading…' : 'Load more chats'}
+            </button>
+        </motion.div>
+    );
+}
+
+/* ── Main modal ───────────────────────────────────────────────────────────── */
 
 /**
- * @param {object} props
- * @param {object[]} props.items     Pending share-inbox items (each has {id, blob, type})
+ * @param {object}   props
+ * @param {object[]} props.items     Pending share-inbox items
  * @param {object[]} props.contacts  Already-known contacts from useContacts()
  * @param {Function} props.onComplete Called when all items have been processed
  */
 export default function ShareRoutingModal({ items, contacts, onComplete }) {
     const reduce = useReducedMotion();
 
-    // ── Items queue ────────────────────────────────────────────────────────
+    // ── Items queue ──────────────────────────────────────────────────────────
     const [queue, setQueue] = useState(items);
     const current = queue[0] ?? null;
     const remaining = queue.length;
 
-    // ── WAHA chats ─────────────────────────────────────────────────────────
+    // ── WAHA chat pagination ─────────────────────────────────────────────────
     const [wahaChats, setWahaChats] = useState([]);
     const [connected, setConnected] = useState(true);
     const [chatsLoading, setChatsLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [hasMore, setHasMore] = useState(false);
+    const [offset, setOffset] = useState(0);
 
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            try {
-                const res = await api.get('/waha/chats');
-                if (cancelled) return;
-                setWahaChats(res.data.chats ?? []);
-                setConnected(res.data.connected ?? false);
-            } catch {
-                if (!cancelled) setConnected(false);
-            } finally {
-                if (!cancelled) setChatsLoading(false);
-            }
-        })();
-        return () => { cancelled = true; };
+    /**
+     * Fetch one page of chats from the backend and either initialise or
+     * append to the existing list.
+     */
+    const fetchPage = useCallback(async (pageOffset, append = false) => {
+        const setter = append ? setLoadingMore : setChatsLoading;
+        setter(true);
+        try {
+            const res = await api.get('/waha/chats', {
+                params: { limit: PAGE_SIZE, offset: pageOffset },
+            });
+            const { chats = [], hasMore: more = false, connected: conn = false } = res.data;
+            setConnected(conn);
+            setWahaChats((prev) => append ? [...prev, ...chats] : chats);
+            setHasMore(more);
+            setOffset(pageOffset + chats.length);
+        } catch {
+            setConnected(false);
+        } finally {
+            setter(false);
+        }
     }, []);
 
-    // ── Merged, deduplicated rows ──────────────────────────────────────────
+    // Initial load on mount.
+    useEffect(() => { fetchPage(0, false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const handleLoadMore = useCallback(() => {
+        if (loadingMore || !hasMore) return;
+        fetchPage(offset, true);
+    }, [fetchPage, hasMore, loadingMore, offset]);
+
+    // ── Merged, deduplicated rows ────────────────────────────────────────────
     const rows = useMemo(() => {
         const waha = wahaChats.map((c) => normaliseRow(c, 'waha'));
         const seenIds = new Set(waha.map((r) => r.id));
-
         const db = (contacts ?? [])
             .filter((c) => c.id && !seenIds.has(c.id))
             .map((c) => normaliseRow(c, 'db'));
-
         return [...waha, ...db].filter((r) => r.id);
     }, [wahaChats, contacts]);
 
-    // ── Search ─────────────────────────────────────────────────────────────
+    // ── Search ───────────────────────────────────────────────────────────────
     const [query, setQuery] = useState('');
     const debouncedQuery = useDebounced(query);
     const searchRef = useRef(null);
@@ -205,31 +255,29 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
         );
     }, [rows, debouncedQuery]);
 
-    // ── Upload logic ───────────────────────────────────────────────────────
+    // Focus search when chats are ready.
+    useEffect(() => {
+        if (!chatsLoading) setTimeout(() => searchRef.current?.focus(), 120);
+    }, [chatsLoading]);
+
+    // ── Upload logic ─────────────────────────────────────────────────────────
     const [uploading, setUploading] = useState(false);
 
     const processItem = useCallback(
         async (item, senderId, senderName) => {
             setUploading(true);
             try {
-                // Read the blob from the inbox item.
                 const fullItem = await window.engzny.shareInbox.take(item.id);
                 if (!fullItem?.blob) throw new Error('No audio in inbox item');
-
                 const buffer = await fullItem.blob.arrayBuffer();
                 const base64 = btoa(
-                    new Uint8Array(buffer).reduce(
-                        (s, b) => s + String.fromCharCode(b),
-                        ''
-                    )
+                    new Uint8Array(buffer).reduce((s, b) => s + String.fromCharCode(b), '')
                 );
-
                 await api.post('/ai/upload', {
                     audioBase64: base64,
                     mimeType: fullItem.type || 'audio/ogg',
                     ...(senderId ? { senderId, senderName } : {}),
                 });
-
                 await window.engzny.shareInbox.delete(item.id);
             } catch (err) {
                 toast.error(err.message || 'Upload failed', {
@@ -239,9 +287,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
             } finally {
                 setUploading(false);
             }
-
-            // Advance the queue regardless of success/failure so we don't
-            // leave the user stuck on a broken item.
             setQueue((prev) => {
                 const next = prev.slice(1);
                 if (next.length === 0) onComplete();
@@ -255,27 +300,17 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
         (row) => processItem(current, row.id, row.name),
         [current, processItem]
     );
-
     const handleSkip = useCallback(
         () => processItem(current, null, null),
         [current, processItem]
     );
 
-    // Focus the search input when chats are ready.
-    useEffect(() => {
-        if (!chatsLoading) {
-            setTimeout(() => searchRef.current?.focus(), 120);
-        }
-    }, [chatsLoading]);
-
     if (!current) return null;
 
-    /* ---------------------------------------------------------------------- */
-    /*  Render                                                                  */
-    /* ---------------------------------------------------------------------- */
-
+    /* ── Render ──────────────────────────────────────────────────────────── */
     return createPortal(
         <AnimatePresence>
+            {/* Backdrop */}
             <motion.div
                 key="share-modal-scrim"
                 initial={{ opacity: 0 }}
@@ -286,6 +321,7 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                 aria-hidden="true"
             />
 
+            {/* Sheet */}
             <motion.div
                 key="share-modal-sheet"
                 role="dialog"
@@ -298,7 +334,7 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                 className="glass fixed inset-x-4 top-1/2 z-[61] mx-auto flex max-h-[82dvh] max-w-lg -translate-y-1/2 flex-col rounded-4xl shadow-glass"
                 style={{ transform: 'translateY(-50%)' }}
             >
-                {/* ── Header ────────────────────────────────────────────── */}
+                {/* Header */}
                 <header className="flex shrink-0 items-start justify-between gap-4 px-6 pb-4 pt-6">
                     <div>
                         <div className="flex items-center gap-2">
@@ -315,7 +351,6 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                             </p>
                         )}
                     </div>
-
                     <button
                         type="button"
                         onClick={handleSkip}
@@ -328,7 +363,7 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                     </button>
                 </header>
 
-                {/* ── Search ────────────────────────────────────────────── */}
+                {/* Search */}
                 <div className="shrink-0 px-4 pb-3">
                     <label className="group/search relative flex h-10 items-center">
                         <span className="sr-only">Search chats</span>
@@ -359,7 +394,7 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                     </label>
                 </div>
 
-                {/* ── List body ─────────────────────────────────────────── */}
+                {/* Scrollable list */}
                 <div
                     className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 [scrollbar-width:thin]"
                     style={{
@@ -369,7 +404,7 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                             'linear-gradient(to bottom, transparent 0, black 8px, black calc(100% - 12px), transparent 100%)',
                     }}
                 >
-                    {/* Loading skeletons */}
+                    {/* Skeleton */}
                     {chatsLoading && (
                         <ul className="flex flex-col gap-1 py-2" aria-hidden="true">
                             {[0.7, 0.55, 0.65, 0.5, 0.6].map((w, i) => (
@@ -412,9 +447,7 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                             animate="show"
                             variants={{
                                 hidden: {},
-                                show: {
-                                    transition: { staggerChildren: 0.025 },
-                                },
+                                show: { transition: { staggerChildren: 0.025 } },
                             }}
                         >
                             {filtered.map((row) => (
@@ -425,11 +458,7 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                                             ? undefined
                                             : {
                                                   hidden: { opacity: 0, x: -8 },
-                                                  show: {
-                                                      opacity: 1,
-                                                      x: 0,
-                                                      transition: SPRING_SNAPPY,
-                                                  },
+                                                  show: { opacity: 1, x: 0, transition: SPRING_SNAPPY },
                                               }
                                     }
                                 >
@@ -438,9 +467,19 @@ export default function ShareRoutingModal({ items, contacts, onComplete }) {
                             ))}
                         </motion.ul>
                     )}
+
+                    {/*
+                      * "Load more" — only visible when:
+                      *   1. The initial load is done (no skeleton).
+                      *   2. Search is empty (pagination makes no sense while filtering).
+                      *   3. The backend says there are more rows (hasMore).
+                      */}
+                    {!chatsLoading && !debouncedQuery && hasMore && (
+                        <LoadMoreButton onLoadMore={handleLoadMore} loading={loadingMore} />
+                    )}
                 </div>
 
-                {/* ── Uploading overlay ─────────────────────────────────── */}
+                {/* Uploading overlay */}
                 <AnimatePresence>
                     {uploading && (
                         <motion.div
