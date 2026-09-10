@@ -73,7 +73,7 @@ function client() {
     return axios.create({
         baseURL,
         headers,
-        timeout: Number.parseInt(process.env.WAHA_TIMEOUT_MS, 10) || 10000,
+        timeout: Number.parseInt(process.env.WAHA_TIMEOUT_MS, 10) || 30000,
         // We inspect status codes ourselves (404 is meaningful for "no session").
         validateStatus: () => true,
     });

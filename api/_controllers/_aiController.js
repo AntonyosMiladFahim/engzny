@@ -242,6 +242,23 @@ async function wahaWebhook(req, res) {
         return;
     }
 
+    // ── Strict content-type guard ─────────────────────────────────────────
+    // Ignore WhatsApp Statuses (Stories). WAHA routes these through the
+    // same webhook but they are ephemeral broadcast content — not voice notes.
+    if (payload.from === 'status@broadcast' || payload.chatId === 'status@broadcast') {
+        return;
+    }
+
+    // Only process push-to-talk voice notes and regular audio messages.
+    // Images, videos, stickers, and documents are silently dropped here so
+    // we never attempt to pass binary image/video data to Gemini's audio API,
+    // and we never waste a lambda invocation on non-audio media.
+    const mediaType = (payload.type ?? '').toLowerCase();
+    if (mediaType !== 'ptt' && mediaType !== 'audio') {
+        console.log(`[waha/webhook] Skipping non-audio message (type=${mediaType || 'unknown'})`);
+        return;
+    }
+
     // `session` is strictly our user's ID, ensuring isolation
     if (!session || !mongoose.isValidObjectId(session)) {
         console.warn(`[ai] Webhook received invalid session name: ${session}`);
@@ -258,8 +275,20 @@ async function wahaWebhook(req, res) {
         const { senderId, senderName } = extractSender(payload);
 
         // 1. Download media buffer from WAHA
-        const { mimetype, buffer } = await waha.downloadMedia(session, messageId);
-        const base64Data = buffer.toString('base64');
+        // ── Isolated try/catch so a network timeout or socket hang-up on
+        //    the download leg does NOT cascade into the Gemini call or the
+        //    DB write. A failed download is logged and the handler exits
+        //    cleanly. The outer HTTP response (200 OK) was already sent, so
+        //    WAHA will not retry.
+        let mimetype, base64Data;
+        try {
+            const media = await waha.downloadMedia(session, messageId);
+            mimetype   = media.mimetype;
+            base64Data = media.buffer.toString('base64');
+        } catch (dlErr) {
+            console.error('[waha/webhook] Failed to download media from WAHA:', dlErr.message);
+            return; // exit cleanly — do not attempt Gemini with no buffer
+        }
 
         // 2. Generate transcript + summary via Gemini
         const { transcript, summary } = await generateSummary(mimetype, base64Data);
