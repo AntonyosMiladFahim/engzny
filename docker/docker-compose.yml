@@ -1,4 +1,4 @@
-# Local infrastructure for the WhatsApp SaaS: WAHA (WhatsApp HTTP API) + MongoDB,
+# Local infrastructure for the WhatsApp SaaS: WAHA (WhatsApp HTTP API),
 # exposed to the internet through a Cloudflare Tunnel (no router port forwarding).
 #
 # Usage (from the repo root):
@@ -32,6 +32,10 @@ services:
       WHATSAPP_API_KEY: ${WAHA_API_KEY:-local-dev-api-key}
       WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
       WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:-admin}
+      # Swagger UI (/) uses separate credentials; pin them to the dashboard ones so
+      # WAHA doesn't generate a fresh random pair on every start.
+      WHATSAPP_SWAGGER_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
+      WHATSAPP_SWAGGER_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:-admin}
       # Engine: WEBJS (default, full feature set) or NOWEB (lighter, no Chromium).
       WHATSAPP_DEFAULT_ENGINE: ${WAHA_ENGINE:-WEBJS}
       # Bring every persisted tenant session back up automatically after a restart.
@@ -66,19 +70,21 @@ services:
       # Downloaded media (images, voice notes, documents) received via WhatsApp.
       - ./waha-media:/app/.media
     healthcheck:
-      # WAHA exposes GET /health; the image is Node-based, so use node instead of curl/wget.
+      # WAHA exposes GET /health, but once WHATSAPP_API_KEY is set that endpoint is
+      # protected too (401 without the key). The probe runs inside the container, so it
+      # reads the key from the container's own environment and sends it as X-Api-Key.
+      # The image is Node-based, so node is used instead of curl/wget.
       test:
         - "CMD"
         - "node"
         - "-e"
-        - "require('http').get('http://127.0.0.1:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+        - "require('http').get({host:'127.0.0.1',port:3000,path:'/health',headers:{'X-Api-Key':process.env.WHATSAPP_API_KEY||''}}, r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
-    depends_on:
-      mongo:
-        condition: service_healthy
+      # Probe every 5s during start_period so the container flips to healthy quickly.
+      start_interval: 5s
     networks:
       - engzny-net
 
@@ -113,31 +119,6 @@ services:
     depends_on:
       waha:
         condition: service_healthy
-    networks:
-      - engzny-net
-
-  mongo:
-    image: mongo:7
-    container_name: engzny-mongo
-    restart: unless-stopped
-    ports:
-      # Loopback only; the tunnel never exposes Mongo.
-      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-root}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-root}
-      MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-engzny}
-    volumes:
-      - ./mongo-data:/data/db
-      - ./mongo-config:/data/configdb
-    healthcheck:
-      test:
-        - "CMD-SHELL"
-        - "mongosh --quiet --eval \"db.adminCommand('ping').ok\" | grep -q 1"
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 20s
     networks:
       - engzny-net
 
