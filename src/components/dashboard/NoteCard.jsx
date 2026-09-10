@@ -89,30 +89,39 @@ function DeleteConfirm({ onConfirm, onCancel, loading }) {
 /**
  * Manages a single HTMLAudioElement per note.
  *
- * The element is created lazily on first play so we don't start a network
- * request for every card that mounts. When `isPlaying` transitions to false
- * (user pauses, or audio ends) we update state but keep the element alive so
- * seeking / replaying is instant.
+ * SECURE FETCHING
+ * ---------------
+ * Native browser `<audio>` elements and `new Audio(url)` do NOT attach the
+ * JWT `Authorization` header, so a direct URL to `/api/notes/:id/audio` always
+ * returns 401. Instead we:
+ *   1. Fetch the bytes via Axios (which attaches the Bearer token automatically).
+ *   2. Wrap the response Blob in a local object URL.
+ *   3. Pass that object URL to `new Audio(url)` — the browser plays from the
+ *      same-origin blob: URL without any additional auth.
+ *   4. Revoke the object URL on unmount to free memory.
  *
- * Returns { isPlaying, progress, toggle } where `progress` is 0–1.
+ * The fetch is lazy: it only fires the first time the user taps Play, so cards
+ * that are never played don't incur any network cost.
+ *
+ * Returns { isPlaying, isLoading, progress, toggle }
+ *   isLoading — true while the first authenticated fetch is in flight.
+ *   progress  — 0–1, updated on a rAF loop while playing.
  */
 function useAudioPlayer(noteId, hasAudio) {
-    const audioRef = useRef(null);
-    const rafRef = useRef(null);
+    const audioRef   = useRef(null);
+    const blobUrlRef = useRef(null); // held so we can revoke on unmount
+    const rafRef     = useRef(null);
     const [isPlaying, setIsPlaying] = useState(false);
-    const [progress, setProgress] = useState(0);
+    const [isLoading, setIsLoading] = useState(false);
+    const [progress,  setProgress]  = useState(0);
 
-    // Keep `isPlaying` in sync with native audio events.
     const onPlay  = useCallback(() => setIsPlaying(true),  []);
     const onPause = useCallback(() => setIsPlaying(false), []);
     const onEnded = useCallback(() => { setIsPlaying(false); setProgress(0); }, []);
 
-    // RAF loop: update progress while playing.
+    // rAF loop: tick progress while playing.
     useEffect(() => {
-        if (!isPlaying) {
-            cancelAnimationFrame(rafRef.current);
-            return;
-        }
+        if (!isPlaying) { cancelAnimationFrame(rafRef.current); return; }
         const tick = () => {
             const el = audioRef.current;
             if (el && el.duration) setProgress(el.currentTime / el.duration);
@@ -122,7 +131,7 @@ function useAudioPlayer(noteId, hasAudio) {
         return () => cancelAnimationFrame(rafRef.current);
     }, [isPlaying]);
 
-    // Clean up on unmount.
+    // Cleanup on unmount: pause, detach events, revoke blob URL.
     useEffect(() => {
         return () => {
             cancelAnimationFrame(rafRef.current);
@@ -133,37 +142,46 @@ function useAudioPlayer(noteId, hasAudio) {
                 el.removeEventListener('pause', onPause);
                 el.removeEventListener('ended', onEnded);
             }
+            if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
         };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const toggle = useCallback(() => {
-        if (!hasAudio) return;
+    const toggle = useCallback(async () => {
+        if (!hasAudio || isLoading) return;
 
-        // Lazy creation: first call builds the element.
-        if (!audioRef.current) {
-            const el = new Audio(`/api/notes/${noteId}/audio`);
-            el.preload = 'none';
+        // If we already have a loaded element, just play/pause.
+        if (audioRef.current) {
+            const el = audioRef.current;
+            el.paused ? el.play().catch(() => {}) : el.pause();
+            return;
+        }
+
+        // ── First play: authenticated fetch → blob → object URL ──────────
+        setIsLoading(true);
+        try {
+            const res = await api.get(`/notes/${noteId}/audio`, { responseType: 'blob' });
+            const url  = URL.createObjectURL(res.data);
+            blobUrlRef.current = url;
+
+            const el   = new Audio(url);
+            el.preload  = 'auto';
             el.addEventListener('play',  onPlay);
             el.addEventListener('pause', onPause);
             el.addEventListener('ended', onEnded);
             el.addEventListener('error', () => {
-                toast.error('Could not load audio. Try again.', { key: `audio-${noteId}`, title: 'Playback error' });
+                toast.error('Playback failed.', { key: `audio-${noteId}`, title: 'Playback error' });
                 setIsPlaying(false);
             });
             audioRef.current = el;
+            await el.play();
+        } catch (err) {
+            toast.error(err?.message || 'Could not load audio.', { key: `audio-${noteId}`, title: 'Playback error' });
+        } finally {
+            setIsLoading(false);
         }
+    }, [noteId, hasAudio, isLoading, onPlay, onPause, onEnded]);
 
-        const el = audioRef.current;
-        if (el.paused) {
-            el.play().catch(() => {
-                toast.error('Could not start playback.', { key: `audio-${noteId}`, title: 'Playback error' });
-            });
-        } else {
-            el.pause();
-        }
-    }, [noteId, hasAudio, onPlay, onPause, onEnded]);
-
-    return { isPlaying, progress, toggle };
+    return { isPlaying, isLoading, progress, toggle };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -206,7 +224,7 @@ export default function NoteCard({
     };
 
     // ── Audio player ───────────────────────────────────────────────────────
-    const { isPlaying, progress, toggle: toggleAudio } = useAudioPlayer(note.id, note.hasAudio);
+    const { isPlaying, isLoading, progress, toggle: toggleAudio } = useAudioPlayer(note.id, note.hasAudio);
 
     // A note is "attributable" when it arrived via WhatsApp (senderId present).
     const clickableSender = Boolean(note.senderId && onSelectContact);
@@ -350,15 +368,12 @@ export default function NoteCard({
             {/* ── Footer: waveform + player ─────────────────────────────── */}
             <footer className="relative mt-4 flex items-center gap-3">
                 {/*
-                  * Waveform + Play/Pause inline player.
+                  * Waveform — takes all remaining space. The progress sweep
+                  * and pulsing bars live inside this container.
                   *
-                  * The waveform sits behind a Play/Pause button that appears
-                  * only when `note.hasAudio` is true. While audio is playing:
-                  *   - Each bar's opacity and scale pulses using its static
-                  *     height as the amplitude, creating a reactive equaliser
-                  *     effect without reading actual audio data.
-                  *   - A signal-400 progress fill sweeps across the waveform
-                  *     container tracking `progress` (0–1).
+                  * The Play/Pause button is a SIBLING flex item (not absolute)
+                  * so it occupies its own physical width and cannot overlap
+                  * the rightmost waveform bars.
                   */}
                 <div className="relative flex h-7 flex-1 items-center gap-[3px]" aria-hidden="true">
                     {/* Progress sweep */}
@@ -399,53 +414,72 @@ export default function NoteCard({
                             }
                         />
                     ))}
-
-                    {/* Play / Pause button */}
-                    {note.hasAudio && (
-                        <button
-                            type="button"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                toggleAudio();
-                            }}
-                            aria-label={isPlaying ? 'Pause voice note' : 'Play voice note'}
-                            className={cx(
-                                'absolute right-0 grid h-7 w-7 shrink-0 place-items-center rounded-full',
-                                'shadow-hairline outline-none transition-[transform,background-color,box-shadow] duration-150 ease-snap',
-                                'focus-visible:ring-2 focus-visible:ring-signal-400/60',
-                                isPlaying
-                                    ? 'scale-105 bg-signal-400 text-ink-950 shadow-signal-sm'
-                                    : 'bg-white/[0.07] text-fog-300 hover:scale-105 hover:bg-signal-400/[0.15] hover:text-signal-300 group-hover:bg-white/[0.10]'
-                            )}
-                        >
-                            <AnimatePresence mode="wait" initial={false}>
-                                {isPlaying ? (
-                                    <motion.span
-                                        key="pause"
-                                        initial={reduce ? false : { scale: 0.6, opacity: 0 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={reduce ? undefined : { scale: 0.6, opacity: 0 }}
-                                        transition={{ duration: 0.1 }}
-                                        className="grid place-items-center"
-                                    >
-                                        <Pause aria-hidden="true" className="h-3.5 w-3.5 fill-current" strokeWidth={0} />
-                                    </motion.span>
-                                ) : (
-                                    <motion.span
-                                        key="play"
-                                        initial={reduce ? false : { scale: 0.6, opacity: 0 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={reduce ? undefined : { scale: 0.6, opacity: 0 }}
-                                        transition={{ duration: 0.1 }}
-                                        className="grid place-items-center"
-                                    >
-                                        <Play aria-hidden="true" className="h-3.5 w-3.5 translate-x-[1px] fill-current" strokeWidth={0} />
-                                    </motion.span>
-                                )}
-                            </AnimatePresence>
-                        </button>
-                    )}
                 </div>
+
+                {/* Play / Pause — sibling flex item, NOT absolute, so it sits
+                    cleanly beside the waveform and doesn't clip the bars. */}
+                {note.hasAudio && (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            toggleAudio();
+                        }}
+                        aria-label={
+                            isLoading ? 'Loading audio…'
+                            : isPlaying ? 'Pause voice note'
+                            : 'Play voice note'
+                        }
+                        disabled={isLoading}
+                        className={cx(
+                            'grid h-7 w-7 shrink-0 place-items-center rounded-full',
+                            'shadow-hairline outline-none transition-[transform,background-color,box-shadow] duration-150 ease-snap',
+                            'focus-visible:ring-2 focus-visible:ring-signal-400/60',
+                            isLoading && 'cursor-wait',
+                            !isLoading && isPlaying
+                                ? 'scale-105 bg-signal-400 text-ink-950 shadow-signal-sm'
+                                : 'bg-white/[0.07] text-fog-300 hover:scale-105 hover:bg-signal-400/[0.15] hover:text-signal-300 group-hover:bg-white/[0.10]'
+                        )}
+                    >
+                        <AnimatePresence mode="wait" initial={false}>
+                            {isLoading ? (
+                                <motion.span
+                                    key="loading"
+                                    initial={reduce ? false : { scale: 0.6, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    exit={reduce ? undefined : { scale: 0.6, opacity: 0 }}
+                                    transition={{ duration: 0.1 }}
+                                    className="grid place-items-center"
+                                >
+                                    {/* Inline spinner matching the card's glassmorphism */}
+                                    <span className="h-3.5 w-3.5 animate-spin-slow rounded-full border-2 border-fog-600/40 border-t-signal-400" />
+                                </motion.span>
+                            ) : isPlaying ? (
+                                <motion.span
+                                    key="pause"
+                                    initial={reduce ? false : { scale: 0.6, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    exit={reduce ? undefined : { scale: 0.6, opacity: 0 }}
+                                    transition={{ duration: 0.1 }}
+                                    className="grid place-items-center"
+                                >
+                                    <Pause aria-hidden="true" className="h-3.5 w-3.5 fill-current" strokeWidth={0} />
+                                </motion.span>
+                            ) : (
+                                <motion.span
+                                    key="play"
+                                    initial={reduce ? false : { scale: 0.6, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    exit={reduce ? undefined : { scale: 0.6, opacity: 0 }}
+                                    transition={{ duration: 0.1 }}
+                                    className="grid place-items-center"
+                                >
+                                    <Play aria-hidden="true" className="h-3.5 w-3.5 translate-x-[1px] fill-current" strokeWidth={0} />
+                                </motion.span>
+                            )}
+                        </AnimatePresence>
+                    </button>
+                )}
 
                 {note.tags.slice(0, 2).map((t) => (
                     <span key={t} className="rounded-md bg-verdigris-400/10 px-2 py-0.5 font-mono text-[10.5px] text-verdigris-300">
