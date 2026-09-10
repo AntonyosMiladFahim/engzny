@@ -237,6 +237,32 @@ async function getChats(sessionName, limit = 25, offset = 0) {
     });
 }
 
+/**
+ * GET /api/{name}/chats/{chatId}/messages
+ * Fetch history of messages in a specific chat for bulk analysis.
+ *
+ * @param {string} sessionName
+ * @param {string} chatId
+ * @param {number} [limit=200]
+ * @returns {Promise<object[]>} raw WAHA message objects
+ */
+async function getChatMessages(sessionName, chatId, limit = 200) {
+    return call(async (http) => {
+        let res = await http.get(
+            `/api/${encodeURIComponent(sessionName)}/chats/${encodeURIComponent(chatId)}/messages`,
+            { params: { limit } }
+        );
+        // Fallback for engines that expose messages at /api/{name}/messages
+        if (res.status === 404) {
+            res = await http.get(`/api/${encodeURIComponent(sessionName)}/messages`, {
+                params: { chatId, limit },
+            });
+        }
+        if (res.status === 404) return [];
+        return unwrap(res);
+    });
+}
+
 module.exports = {
     SessionStatus,
     WahaError,
@@ -248,4 +274,5 @@ module.exports = {
     sendText,
     downloadMedia,
     getChats,
+    getChatMessages,
 };

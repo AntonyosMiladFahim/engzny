@@ -12,7 +12,7 @@ const { uploadVoiceNote, wahaWebhook } = require('../_controllers/_aiController'
 // Mocks
 jest.mock('@google/generative-ai', () => {
     const mGenerateContent = jest.fn().mockResolvedValue({
-        response: { text: () => 'Mocked summary from Gemini' }
+        response: { text: () => JSON.stringify({ transcript: 'Mock transcript', summary: 'Mocked summary from Gemini' }) }
     });
     return {
         GoogleGenerativeAI: jest.fn().mockImplementation(() => ({

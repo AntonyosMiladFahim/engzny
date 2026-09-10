@@ -21,7 +21,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowLeft, Download, LogOut, Search, X } from 'lucide-react';
+import { ArrowLeft, Download, LogOut, Search, Sparkles, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useContacts, useDebouncedValue, useFolders, useVoiceNotes } from '../hooks/useLibrary';
 import useWahaPolling from '../hooks/useWahaPolling';
@@ -36,6 +36,8 @@ import MobileNav from '../components/dashboard/MobileNav';
 import Drawer from '../components/dashboard/Drawer';
 import ConnectionPill from '../components/dashboard/ConnectionPill';
 import ShareRoutingModal from '../components/dashboard/ShareRoutingModal';
+import BulkAnalyzeModal from '../components/dashboard/BulkAnalyzeModal';
+import AnalyzedChatsView from '../components/dashboard/AnalyzedChatsView';
 import UserChip from '../components/shell/UserChip';
 import { toast } from '../components/ui/toast';
 import { matchesQuery, contactHandle } from '../components/format';
@@ -54,6 +56,10 @@ export default function Dashboard() {
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [installable, setInstallable] = useState(() => !!window.engzny?.installPrompt);
     const searchRef = useRef(null);
+
+    // Partition view state ('library' vs 'analyzed') & Bulk Analyze Modal
+    const [partition, setPartition] = useState('library');
+    const [bulkModalOpen, setBulkModalOpen] = useState(false);
 
     // ── Pending share items ───────────────────────────────────────────────
     // When the share inbox has items we show ShareRoutingModal instead of
@@ -283,6 +289,8 @@ export default function Dashboard() {
                     connection={waha}
                     user={user}
                     onLogout={logout}
+                    partition={partition}
+                    onSelectPartition={(p) => setPartition(p)}
                 />
 
                 {/* ── Main content area ─────────────────────────────────── */}
@@ -307,12 +315,16 @@ export default function Dashboard() {
                         <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
                             <div>
                                 <motion.p variants={rise} className="eyebrow mb-3">
-                                    {inChatTimeline ? `Library · ${scopeLabel}` : 'Library · Chats'}
+                                    {partition === 'analyzed'
+                                        ? 'Partition · Analyzed Chats'
+                                        : inChatTimeline
+                                          ? `Library · ${scopeLabel}`
+                                          : 'Library · Chats'}
                                 </motion.p>
 
                                 {/* Back button shown in chat timeline view */}
                                 <AnimatePresence mode="wait" initial={false}>
-                                    {inChatTimeline ? (
+                                    {inChatTimeline && partition === 'library' ? (
                                         <motion.div
                                             key="timeline-header"
                                             initial={reduce ? false : { opacity: 0, x: -8 }}
@@ -339,7 +351,7 @@ export default function Dashboard() {
                                             animate="show"
                                             className="text-display-sm text-fog-50"
                                         >
-                                            Dashboard
+                                            {partition === 'analyzed' ? 'Analyzed Chats' : 'Dashboard'}
                                         </motion.h1>
                                     )}
                                 </AnimatePresence>
@@ -347,41 +359,33 @@ export default function Dashboard() {
                                 <motion.p variants={riseSoft} className="mt-3 text-[15px] text-fog-400">
                                     Welcome{user?.name ? `, ${user.name}` : ''}.{' '}
                                     <span className="text-fog-500">
-                                        {notesQ.loading && inChatTimeline
-                                            ? 'Fetching notes…'
-                                            : inChatTimeline
-                                              ? `${filtered.length} ${filtered.length === 1 ? 'note' : 'notes'}${
-                                                    foldersQ.folders.length
-                                                        ? ` · ${foldersQ.folders.length} ${foldersQ.folders.length === 1 ? 'folder' : 'folders'}`
-                                                        : ''
-                                                }`
-                                              : `${contactsQ.contacts.length} ${contactsQ.contacts.length === 1 ? 'contact' : 'contacts'}`}
+                                        {partition === 'analyzed'
+                                            ? 'Full chat voice note bulk summaries & transcripts'
+                                            : notesQ.loading && inChatTimeline
+                                              ? 'Fetching notes…'
+                                              : inChatTimeline
+                                                ? `${filtered.length} ${filtered.length === 1 ? 'note' : 'notes'}${
+                                                      foldersQ.folders.length
+                                                          ? ` · ${foldersQ.folders.length} ${foldersQ.folders.length === 1 ? 'folder' : 'folders'}`
+                                                          : ''
+                                                  }`
+                                                : `${contactsQ.contacts.length} ${contactsQ.contacts.length === 1 ? 'contact' : 'contacts'}`}
                                     </span>
                                 </motion.p>
-
-                                {/* Active contact filter chip (shown in timeline on mobile) */}
-                                {activeContact && (
-                                    <motion.button
-                                        type="button"
-                                        layout={reduce ? false : 'position'}
-                                        initial={reduce ? false : { opacity: 0, y: -4 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        transition={SPRING_SNAPPY}
-                                        onClick={() => selectContact(null)}
-                                        aria-label={`Clear contact filter: ${activeContact.name}`}
-                                        className="group mt-4 hidden items-center gap-2 rounded-xl bg-verdigris-400/[0.09] pl-3 pr-2 h-8 text-[13px] text-verdigris-100 shadow-hairline ring-1 ring-verdigris-400/20 transition-colors duration-150 hover:bg-verdigris-400/[0.14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-verdigris-300 lg:inline-flex"
-                                    >
-                                        <span aria-hidden="true" className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-verdigris-300/80">From</span>
-                                        <span aria-hidden="true" className="max-w-[22ch] truncate font-bold">{activeContact.name}</span>
-                                        <X aria-hidden="true" className="h-3.5 w-3.5 text-verdigris-300/70 transition-colors duration-150 group-hover:text-verdigris-100" strokeWidth={2.25} />
-                                    </motion.button>
-                                )}
                             </div>
 
-                            {/* Search bar — shown in the chat timeline, folder view, OR when
-                                  a global query is already active (showSearch keeps it visible). */}
-                            {showSearch && (
-                                <motion.div variants={riseSoft} className="flex w-full items-center gap-3 sm:w-auto">
+                            {/* Analyze All Button & Search Bar */}
+                            <motion.div variants={riseSoft} className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                                <button
+                                    type="button"
+                                    onClick={() => setBulkModalOpen(true)}
+                                    className="inline-flex h-11 items-center gap-2 rounded-xl2 bg-signal-400 px-4 text-[13.5px] font-bold text-ink-950 shadow-hairline transition-all duration-150 hover:bg-signal-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400/60"
+                                >
+                                    <Sparkles aria-hidden="true" className="h-4 w-4" strokeWidth={2.25} />
+                                    <span>Analyze All</span>
+                                </button>
+
+                                {showSearch && partition === 'library' && (
                                     <label className="group relative flex h-11 w-full items-center sm:w-[300px]">
                                         <span className="sr-only">Search notes</span>
                                         <Search
@@ -395,8 +399,6 @@ export default function Dashboard() {
                                             value={query}
                                             onChange={(e) => {
                                                 const next = e.target.value;
-                                                // The moment the user starts typing, clear any active
-                                                // contact / folder scope so the search is global.
                                                 if (next.trim() && (senderId || folderId)) {
                                                     setParams({}, { replace: true });
                                                 }
@@ -431,35 +433,15 @@ export default function Dashboard() {
                                                 ⌘K
                                             </kbd>
                                         )}
-
-                                        {/* Indeterminate search progress bar */}
-                                        {searching && !reduce && (
-                                            <span
-                                                aria-hidden="true"
-                                                className="pointer-events-none absolute inset-x-3 bottom-[5px] h-px overflow-hidden rounded-full bg-white/[0.07]"
-                                            >
-                                                <motion.span
-                                                    className="block h-full w-1/3 rounded-full bg-signal-400"
-                                                    animate={{ x: ['-110%', '320%'] }}
-                                                    transition={{ duration: 0.85, repeat: Infinity, ease: 'easeInOut' }}
-                                                />
-                                            </span>
-                                        )}
                                     </label>
-                                    <span role="status" aria-live="polite" className="sr-only">
-                                        {searching
-                                            ? 'Searching summaries…'
-                                            : query.trim()
-                                              ? `${filtered.length} matching notes`
-                                              : ''}
-                                    </span>
-                                    <ConnectionPill
-                                        status={waha.status}
-                                        isConnected={waha.isConnected}
-                                        className="hidden lg:inline-flex"
-                                    />
-                                </motion.div>
-                            )}
+                                )}
+
+                                <ConnectionPill
+                                    status={waha.status}
+                                    isConnected={waha.isConnected}
+                                    className="hidden lg:inline-flex"
+                                />
+                            </motion.div>
                         </div>
 
                         <motion.div
@@ -502,9 +484,20 @@ export default function Dashboard() {
                         )}
                     </motion.header>
 
-                    {/* ── Body: Chat List OR Note Timeline ─────────────── */}
+                    {/* ── Body: Analyzed Chats Partition OR Library Views ─────────────── */}
                     <AnimatePresence mode="wait" initial={false}>
-                        {!inChatTimeline ? (
+                        {partition === 'analyzed' ? (
+                            <motion.section
+                                key="analyzed-chats"
+                                initial={reduce ? false : { opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={reduce ? { opacity: 0 } : { opacity: 0, y: -8 }}
+                                transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1] }}
+                                className="mt-8"
+                            >
+                                <AnalyzedChatsView onOpenAnalyzeModal={() => setBulkModalOpen(true)} />
+                            </motion.section>
+                        ) : !inChatTimeline ? (
                             /* ── Chat list (root view) ────────────────── */
                             <motion.section
                                 key="chat-list"
@@ -579,8 +572,16 @@ export default function Dashboard() {
             {/* ── Mobile bottom nav ──────────────────────────────────── */}
             <MobileNav
                 view={inChatTimeline ? 'folder' : 'all'}
-                onNotes={inChatTimeline ? goBack : undefined}
-                onFolders={() => setDrawerOpen(true)}
+                partition={partition}
+                onNotes={() => {
+                    setPartition('library');
+                    if (inChatTimeline) goBack();
+                }}
+                onFolders={() => {
+                    setPartition('library');
+                    setDrawerOpen(true);
+                }}
+                onAnalyzed={() => setPartition('analyzed')}
                 onSearch={focusSearch}
                 linked={waha.isConnected}
             />
@@ -620,6 +621,13 @@ export default function Dashboard() {
                     </button>
                 </div>
             </Drawer>
+
+            {/* ── Bulk Analyze Modal ─────────────────────────────────── */}
+            <BulkAnalyzeModal
+                open={bulkModalOpen}
+                onClose={() => setBulkModalOpen(false)}
+                onLaunchSuccess={() => setPartition('analyzed')}
+            />
         </AppShell>
     );
 }

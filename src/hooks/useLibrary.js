@@ -13,6 +13,7 @@ export const ENDPOINTS = {
     folders: '/folders',
     notes: '/notes',
     contacts: '/notes/contacts',
+    batches: '/ai/batches',
 };
 
 /** How long the search box stays quiet before it hits the deep-search API. */
@@ -25,6 +26,24 @@ export function unwrapList(payload, keys = []) {
         if (Array.isArray(payload[k])) return payload[k];
     }
     return [];
+}
+
+export function normalizeBatch(raw) {
+    if (!raw) return null;
+    return {
+        id: String(raw._id ?? raw.id),
+        chatId: raw.chatId ?? '',
+        chatName: raw.chatName || contactHandle(raw.chatId) || 'WhatsApp Chat',
+        chatPicture: raw.chatPicture ?? null,
+        startDate: raw.startDate ?? null,
+        endDate: raw.endDate ?? null,
+        status: raw.status ?? 'pending',
+        totalNotes: raw.totalNotes ?? 0,
+        processedNotes: raw.processedNotes ?? 0,
+        failedNotes: raw.failedNotes ?? 0,
+        error: raw.error ?? null,
+        createdAt: raw.createdAt ?? null,
+    };
 }
 
 export function normalizeFolder(raw) {
@@ -209,4 +228,67 @@ export function useVoiceNotes({ client = api, folderId = null, senderId = null, 
     }, [data, term]);
 
     return { notes, error, loading, refresh };
+}
+
+/**
+ * Fetch list of user's bulk batch analyses, with optional polling for active jobs.
+ */
+export function useBatchAnalyses({ client = api, enabled = true, pollInterval = 4000 } = {}) {
+    const { data, error, loading, refresh } = useResource(
+        async (signal) => {
+            const res = await client.get(ENDPOINTS.batches, { signal });
+            return unwrapList(res?.data, ['batches']).map(normalizeBatch).filter(Boolean);
+        },
+        [client],
+        { enabled }
+    );
+
+    const hasProcessing = useMemo(() => {
+        return (data ?? []).some((b) => b.status === 'processing' || b.status === 'pending');
+    }, [data]);
+
+    useEffect(() => {
+        if (!enabled || !hasProcessing) return;
+        const interval = setInterval(() => {
+            refresh();
+        }, pollInterval);
+        return () => clearInterval(interval);
+    }, [enabled, hasProcessing, pollInterval, refresh]);
+
+    return { batches: data ?? [], error, loading, refresh };
+}
+
+/**
+ * Fetch detail and notes of a specific bulk batch analysis.
+ */
+export function useBatchDetail({ client = api, batchId = null, enabled = true, pollInterval = 3000 } = {}) {
+    const { data, error, loading, refresh } = useResource(
+        async (signal) => {
+            if (!batchId) return null;
+            const res = await client.get(`${ENDPOINTS.batches}/${encodeURIComponent(batchId)}`, { signal });
+            const batch = normalizeBatch(res?.data?.batch);
+            const notes = unwrapList(res?.data?.notes, ['notes']).map(normalizeNote);
+            return { batch, notes };
+        },
+        [client, batchId],
+        { enabled: enabled && Boolean(batchId) }
+    );
+
+    const isProcessing = data?.batch?.status === 'processing' || data?.batch?.status === 'pending';
+
+    useEffect(() => {
+        if (!enabled || !batchId || !isProcessing) return;
+        const interval = setInterval(() => {
+            refresh();
+        }, pollInterval);
+        return () => clearInterval(interval);
+    }, [enabled, batchId, isProcessing, pollInterval, refresh]);
+
+    return {
+        batch: data?.batch ?? null,
+        notes: data?.notes ?? [],
+        error,
+        loading,
+        refresh,
+    };
 }

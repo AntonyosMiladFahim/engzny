@@ -14,6 +14,7 @@ const connectDB = require('../_config/_db');
 const waha = require('../_config/_waha');
 const Folder = require('../_models/_Folder');
 const VoiceNote = require('../_models/_VoiceNote');
+const BatchAnalysis = require('../_models/_BatchAnalysis');
 const { chatId, isGroupChat } = require('../_utils/_contact');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key');
@@ -253,8 +254,8 @@ async function wahaWebhook(req, res) {
     // Images, videos, stickers, and documents are silently dropped here so
     // we never attempt to pass binary image/video data to Gemini's audio API,
     // and we never waste a lambda invocation on non-audio media.
-    const mediaType = (payload.type ?? '').toLowerCase();
-    if (mediaType !== 'ptt' && mediaType !== 'audio') {
+    const mediaType = (payload.type ?? 'ptt').toLowerCase();
+    if (mediaType && mediaType !== 'ptt' && mediaType !== 'audio') {
         console.log(`[waha/webhook] Skipping non-audio message (type=${mediaType || 'unknown'})`);
         return;
     }
@@ -323,9 +324,212 @@ async function wahaWebhook(req, res) {
     }
 }
 
+/**
+ * Background worker task for running a batch analysis asynchronously.
+ */
+async function runBatchAnalysisTask(userId, batchId, targetChatId, startDate, endDate) {
+    try {
+        await connectDB();
+        const session = String(userId);
+
+        let rawMessages = [];
+        try {
+            rawMessages = await waha.getChatMessages(session, targetChatId, 500);
+        } catch (err) {
+            console.error('[batch-analyze] Failed to fetch chat messages:', err.message);
+            await BatchAnalysis.findByIdAndUpdate(batchId, {
+                status: 'failed',
+                error: 'Could not fetch messages from WhatsApp chat',
+            });
+            return;
+        }
+
+        const startMs = new Date(startDate).getTime();
+        const endMs = new Date(endDate).getTime();
+
+        const matching = (Array.isArray(rawMessages) ? rawMessages : []).filter((msg) => {
+            if (!msg) return false;
+            const hasMedia = msg.hasMedia || Boolean(msg.media);
+            const mType = (msg.type || msg.mediaType || '').toLowerCase();
+            const mime = (msg.media?.mimetype || msg._data?.mimetype || '').toLowerCase();
+            const isAudio = mType === 'ptt' || mType === 'audio' || mime.startsWith('audio/');
+            if (!hasMedia || !isAudio) return false;
+
+            const rawTs = msg.timestamp || msg._data?.t;
+            if (!rawTs) return false;
+            const tsMs = typeof rawTs === 'number' && rawTs < 1e11 ? rawTs * 1000 : Number(rawTs);
+            return tsMs >= startMs && tsMs <= endMs;
+        });
+
+        await BatchAnalysis.findByIdAndUpdate(batchId, {
+            totalNotes: matching.length,
+            status: matching.length === 0 ? 'completed' : 'processing',
+        });
+
+        if (matching.length === 0) {
+            return;
+        }
+
+        matching.sort((a, b) => {
+            const tA = a.timestamp || a._data?.t || 0;
+            const tB = b.timestamp || b._data?.t || 0;
+            return tA - tB;
+        });
+
+        for (const msg of matching) {
+            try {
+                const messageId = msg.id?._serialized || msg.id;
+                const rawTs = msg.timestamp || msg._data?.t;
+                const msgDate = new Date(typeof rawTs === 'number' && rawTs < 1e11 ? rawTs * 1000 : Number(rawTs));
+
+                let mimetype = 'audio/ogg';
+                let base64Data = null;
+
+                try {
+                    const media = await waha.downloadMedia(session, messageId);
+                    mimetype = media.mimetype;
+                    base64Data = media.buffer.toString('base64');
+                } catch (dlErr) {
+                    console.warn(`[batch-analyze] Could not download message ${messageId}:`, dlErr.message);
+                    await BatchAnalysis.findByIdAndUpdate(batchId, { $inc: { failedNotes: 1 } });
+                    continue;
+                }
+
+                const { transcript, summary } = await generateSummary(mimetype, base64Data);
+                const { senderId, senderName } = extractSender(msg);
+                const originalAudioUrl = `data:${mimetype};base64,${base64Data}`;
+
+                const note = await VoiceNote.create({
+                    userId,
+                    batchId,
+                    folderId: null,
+                    senderId: senderId || targetChatId,
+                    senderName: senderName || 'WhatsApp Contact',
+                    originalAudioUrl,
+                    transcript,
+                    summary,
+                    createdAt: msgDate,
+                });
+
+                await BatchAnalysis.findByIdAndUpdate(batchId, {
+                    $inc: { processedNotes: 1 },
+                    $push: { noteIds: note._id },
+                });
+            } catch (noteErr) {
+                console.error('[batch-analyze] Error processing note:', noteErr.message);
+                await BatchAnalysis.findByIdAndUpdate(batchId, { $inc: { failedNotes: 1 } });
+            }
+        }
+
+        await BatchAnalysis.findByIdAndUpdate(batchId, { status: 'completed' });
+    } catch (err) {
+        console.error('[batch-analyze] Global task error:', err.message);
+        await BatchAnalysis.findByIdAndUpdate(batchId, {
+            status: 'failed',
+            error: err.message,
+        });
+    }
+}
+
+/**
+ * POST /api/ai/batch-analyze (requireAuth)
+ * Starts a background bulk chat analysis job. Responds immediately (202 Accepted).
+ */
+async function startBatchAnalysis(req, res) {
+    const { chatId, chatName, chatPicture, startDate, endDate } = req.body;
+
+    if (!chatId || typeof chatId !== 'string') {
+        return res.status(400).json({ message: 'chatId is required' });
+    }
+    if (!startDate || !endDate) {
+        return res.status(400).json({ message: 'startDate and endDate are required' });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return res.status(400).json({ message: 'Invalid startDate or endDate' });
+    }
+    if (start > end) {
+        return res.status(400).json({ message: 'startDate must be before or equal to endDate' });
+    }
+
+    try {
+        await connectDB();
+
+        const batch = await BatchAnalysis.create({
+            userId: req.user.id,
+            chatId: chatId.trim(),
+            chatName: (chatName || '').trim(),
+            chatPicture: chatPicture || null,
+            startDate: start,
+            endDate: end,
+            status: 'processing',
+            totalNotes: 0,
+            processedNotes: 0,
+            failedNotes: 0,
+            noteIds: [],
+        });
+
+        res.status(202).json(batch);
+
+        setImmediate(() => {
+            runBatchAnalysisTask(req.user.id, batch._id, chatId.trim(), start, end);
+        });
+    } catch (err) {
+        console.error('[ai] startBatchAnalysis failed:', err.message);
+        return res.status(500).json({ message: 'Internal server error' });
+    }
+}
+
+/**
+ * GET /api/ai/batches (requireAuth)
+ * Returns all bulk batch analyses for the authenticated user.
+ */
+async function getBatchAnalyses(req, res) {
+    try {
+        await connectDB();
+        const batches = await BatchAnalysis.find({ userId: req.user.id }).sort({ createdAt: -1 });
+        return res.status(200).json({ batches });
+    } catch (err) {
+        console.error('[ai] getBatchAnalyses failed:', err.message);
+        return res.status(500).json({ message: 'Internal server error' });
+    }
+}
+
+/**
+ * GET /api/ai/batches/:id (requireAuth)
+ * Returns a batch analysis with populated notes for the authenticated user.
+ */
+async function getBatchDetail(req, res) {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+        return res.status(400).json({ message: 'Invalid batch ID' });
+    }
+
+    try {
+        await connectDB();
+        const batch = await BatchAnalysis.findOne({ _id: id, userId: req.user.id });
+        if (!batch) {
+            return res.status(404).json({ message: 'Batch analysis not found' });
+        }
+
+        const notes = await VoiceNote.find({ batchId: batch._id, userId: req.user.id }).sort({ createdAt: 1 });
+
+        return res.status(200).json({ batch, notes });
+    } catch (err) {
+        console.error('[ai] getBatchDetail failed:', err.message);
+        return res.status(500).json({ message: 'Internal server error' });
+    }
+}
+
 module.exports = {
     uploadVoiceNote,
     wahaWebhook,
+    startBatchAnalysis,
+    getBatchAnalyses,
+    getBatchDetail,
     // Exported for unit tests
-    _internal: { generateSummary, extractSender },
+    _internal: { generateSummary, extractSender, runBatchAnalysisTask },
 };

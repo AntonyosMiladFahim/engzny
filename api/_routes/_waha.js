@@ -37,7 +37,7 @@ router.post('/webhook', wahaController.wahaWebhook);
 /* PROTECTED — valid Bearer token required for all routes below.              */
 /* -------------------------------------------------------------------------- */
 
-router.post('/pair', requireAuth, wahaController.requestPairingCode);
+router.all('/pair', requireAuth, wahaController.requestPairingCode);
 router.get('/status', requireAuth, wahaController.checkStatus);
 router.get('/chats', requireAuth, wahaController.getChats);
 
