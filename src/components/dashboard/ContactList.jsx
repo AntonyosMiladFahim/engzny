@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronRight, Search, Users } from 'lucide-react';
+import { ChevronRight, Search, Users, X } from 'lucide-react';
 import cx from '../ui/cx';
 import { initials } from '../format';
 import { SPRING_SNAPPY } from '../motion';
@@ -17,6 +17,12 @@ const FILTER_THRESHOLD = 6;
  * is CSS transition work on a single element — no re-render, no jank — while
  * the active plate itself is a framer-motion shared layer so it *slides*
  * between rows instead of blinking.
+ *
+ * When the row IS active, clicking it again deselects (the toggle logic is in
+ * Dashboard > selectContact). We signal this affordance by:
+ *   - Flipping the button title to "Click to deselect — <name>"
+ *   - Showing a verdigris ring on the active plate
+ *   - Swapping the initials avatar for a × glyph on hover of the active row
  */
 function ContactRow({ contact, active, onSelect, layoutGroup }) {
     return (
@@ -25,7 +31,13 @@ function ContactRow({ contact, active, onSelect, layoutGroup }) {
                 type="button"
                 onClick={() => onSelect?.(contact.id)}
                 aria-current={active ? 'true' : undefined}
-                title={contact.handle ? `${contact.name} · ${contact.handle}` : contact.name}
+                title={
+                    active
+                        ? `Click to deselect — ${contact.name}`
+                        : contact.handle
+                          ? `${contact.name} · ${contact.handle}`
+                          : contact.name
+                }
                 className={cx(
                     'group/row relative flex w-full items-center gap-2.5 rounded-xl py-1.5 pl-2 pr-2.5 text-left outline-none',
                     'transition-[transform,color] duration-150 ease-snap active:scale-[0.985]',
@@ -38,7 +50,7 @@ function ContactRow({ contact, active, onSelect, layoutGroup }) {
                         layoutId={`${layoutGroup}-contact-plate`}
                         transition={SPRING_SNAPPY}
                         aria-hidden="true"
-                        className="absolute inset-0 rounded-xl bg-white/[0.06] shadow-hairline"
+                        className="absolute inset-0 rounded-xl bg-white/[0.06] shadow-hairline ring-1 ring-verdigris-400/25"
                     />
                 )}
                 {active && (
@@ -60,6 +72,13 @@ function ContactRow({ contact, active, onSelect, layoutGroup }) {
                     )}
                 />
 
+                {/*
+                  * Avatar / initials badge.
+                  *
+                  * Inactive: initials on ink-700 → warm to verdigris on row-hover.
+                  * Active  : verdigris ring + initials, but on hover the initials
+                  *           fade out and a × slides in — signalling "deselect".
+                  */}
                 <span
                     className={cx(
                         'relative grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-ink-700 font-mono text-[10.5px] leading-none shadow-hairline transition-colors duration-250',
@@ -68,7 +87,24 @@ function ContactRow({ contact, active, onSelect, layoutGroup }) {
                             : 'text-fog-400 group-hover/row:text-verdigris-300'
                     )}
                 >
-                    {initials(contact.name)}
+                    {/* Initials: hidden on hover when active (the × takes over) */}
+                    <span
+                        className={cx(
+                            'transition-opacity duration-150',
+                            active && 'group-hover/row:opacity-0'
+                        )}
+                    >
+                        {initials(contact.name)}
+                    </span>
+                    {/* × deselect hint — only mounted for the active row, fades
+                        in on row-hover so it never distracts in the idle state. */}
+                    {active && (
+                        <X
+                            aria-hidden="true"
+                            strokeWidth={2.5}
+                            className="pointer-events-none absolute inset-0 m-auto h-3.5 w-3.5 text-verdigris-200 opacity-0 transition-opacity duration-150 group-hover/row:opacity-100"
+                        />
+                    )}
                 </span>
 
                 <span className="relative min-w-0 flex-1">
@@ -106,7 +142,9 @@ function ContactRow({ contact, active, onSelect, layoutGroup }) {
 
 /**
  * The "Contacts" rail: every WhatsApp sender who has ever landed a summary
- * here, newest conversation first. Selecting one filters the NotesGrid.
+ * here, newest conversation first. Selecting one filters the NotesGrid;
+ * selecting the same one again clears the filter (handled by the parent's
+ * `onSelect` toggle logic).
  *
  * `layoutGroup` must differ per mounted instance (sidebar vs drawer) or the
  * two active plates fight over the same shared layout id.
@@ -182,7 +220,7 @@ export default function ContactList({
                 </div>
             ) : visible.length === 0 ? (
                 <p className="px-3 py-2 text-[12.5px] leading-relaxed text-fog-500">
-                    No contact matches “<span className="text-fog-300">{filter.trim()}</span>”.
+                    No contact matches "<span className="text-fog-300">{filter.trim()}</span>".
                 </p>
             ) : (
                 <ul className="flex flex-col gap-0.5">
