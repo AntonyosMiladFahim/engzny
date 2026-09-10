@@ -40,6 +40,38 @@ const voiceNoteSchema = new Schema(
         },
 
         /**
+         * WhatsApp chat id of whoever sent the voice note – e.g.
+         * `201001234567@c.us`. This is the *stable* grouping key for the
+         * Contacts rail: display names change, the id does not.
+         *
+         * For a group chat we store the participant (the actual human) rather
+         * than the group id, so "Contacts" always means people.
+         *
+         * `null` for notes that arrived through the PWA share target, where
+         * there is no WhatsApp sender at all.
+         */
+        senderId: {
+            type: String,
+            trim: true,
+            default: null,
+        },
+
+        /**
+         * The sender's WhatsApp display name at the time the note arrived
+         * (`_data.notifyName` on the WEBJS engine, `pushName` on NOWEB).
+         *
+         * Deliberately allowed to be empty: WhatsApp does not always give us a
+         * name, and storing a synthesised "+2010…" here would go stale the
+         * moment the real name shows up. Read-side code resolves the fallback
+         * chain via `_utils/_contact.displayName()`.
+         */
+        senderName: {
+            type: String,
+            trim: true,
+            default: '',
+        },
+
+        /**
          * Location of the raw audio as delivered by WAHA (typically an
          * `.ogg`/opus file). We store a URL rather than the binary itself to
          * keep documents small and well under MongoDB's 16 MB limit.
@@ -77,6 +109,37 @@ const voiceNoteSchema = new Schema(
  * "give me this user's notes in this folder, newest first".
  */
 voiceNoteSchema.index({ userId: 1, folderId: 1, createdAt: -1 });
+
+/**
+ * Same shape, keyed by contact: backs both `GET /api/notes?sender=…` and the
+ * `$group` stage of `GET /api/notes/contacts`.
+ */
+voiceNoteSchema.index({ userId: 1, senderId: 1, createdAt: -1 });
+
+/**
+ * Compound TEXT index powering the deep search (`?search=`).
+ *
+ *   - MongoDB allows exactly ONE text index per collection, which is why both
+ *     searchable fields live in this single compound declaration rather than
+ *     in two separate indexes.
+ *   - `weights` make a hit on the contact's name outrank a passing mention of
+ *     the same word inside a summary, so "mariam" surfaces Mariam's notes
+ *     before a note that merely says "ask mariam about it".
+ *   - `default_language: 'none'` disables stemming and stop-word removal.
+ *     Summaries here are routinely Arabic (or code-switched Arabic/English),
+ *     which the English analyser would mangle: it would strip Arabic-adjacent
+ *     tokens it mistakes for stop words and stem English words in ways that
+ *     hurt exact-name matching. The route layer keeps a regex fallback for the
+ *     partial-word / prefix cases a text index cannot serve.
+ */
+voiceNoteSchema.index(
+    { senderName: 'text', summary: 'text' },
+    {
+        name: 'voicenote_search',
+        weights: { senderName: 8, summary: 4 },
+        default_language: 'none',
+    }
+);
 
 // Serverless-safe export (see _User.js for the rationale).
 module.exports =

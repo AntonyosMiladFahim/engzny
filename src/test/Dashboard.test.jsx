@@ -22,24 +22,56 @@ const FOLDERS = [
     { _id: 'f2', name: 'Family', count: 1 },
 ];
 const NOTES = [
-    { _id: 'n1', sender: 'Omar Hassan', summary: 'Client wants the deck moved to Thursday and the pricing slide simplified.', duration: 272, createdAt: '2026-09-09T10:00:00Z', folder: { _id: 'f1', name: 'Work' }, tags: ['deadline'] },
-    { _id: 'n2', sender: 'Mariam', summary: 'Reminder to book the venue before the deposit deadline on Friday.', duration: 61, createdAt: '2026-09-08T09:00:00Z', folder: { _id: 'f1', name: 'Work' } },
-    { _id: 'n3', sender: 'Mama', summary: 'Dinner is at eight, bring the good plates.', transcript: 'Habibi, dinner is at eight tonight. Bring the good plates from the top shelf.', duration: 34, createdAt: '2026-09-07T18:00:00Z', folder: { _id: 'f2', name: 'Family' } },
+    { _id: 'n1', sender: 'Omar Hassan', senderId: '201001234567@c.us', summary: 'Client wants the deck moved to Thursday and the pricing slide simplified.', duration: 272, createdAt: '2026-09-09T10:00:00Z', folder: { _id: 'f1', name: 'Work' }, tags: ['deadline'] },
+    { _id: 'n2', sender: 'Mariam', senderId: '201119876543@c.us', summary: 'Reminder to book the venue before the deposit deadline on Friday.', duration: 61, createdAt: '2026-09-08T09:00:00Z', folder: { _id: 'f1', name: 'Work' } },
+    { _id: 'n3', sender: 'Mama', senderId: '201005555555@c.us', summary: 'Dinner is at eight, bring the good plates.', transcript: 'Habibi, dinner is at eight tonight. Bring the good plates from the top shelf.', duration: 34, createdAt: '2026-09-07T18:00:00Z', folder: { _id: 'f2', name: 'Family' } },
+];
+// The third has no display name on purpose: it must fall back to the phone.
+const CONTACTS = [
+    { senderId: '201001234567@c.us', senderName: 'Omar Hassan', count: 1, lastNoteAt: '2026-09-09T10:00:00Z' },
+    { senderId: '201119876543@c.us', senderName: 'Mariam', count: 1, lastNoteAt: '2026-09-08T09:00:00Z' },
+    { senderId: '201005555555@c.us', senderName: '', count: 1, lastNoteAt: '2026-09-07T18:00:00Z' },
 ];
 
-function mockBackend({ folders = FOLDERS, notes = NOTES, status = 'WORKING', failNotes = false, failFolders = false } = {}) {
+function mockBackend({
+    folders = FOLDERS,
+    notes = NOTES,
+    contacts = CONTACTS,
+    status = 'WORKING',
+    failNotes = false,
+    failFolders = false,
+    failContacts = false,
+} = {}) {
     api.get.mockImplementation((url, config) => {
         if (url === '/folders') return failFolders ? Promise.reject(new Error('folders 500')) : Promise.resolve({ data: folders });
+        if (url === '/notes/contacts') {
+            return failContacts ? Promise.reject(new Error('contacts 500')) : Promise.resolve({ data: { contacts } });
+        }
         if (url === '/notes') {
             if (failNotes) return Promise.reject(new Error('notes 503'));
-            const folder = config?.params?.folder;
-            const list = folder ? notes.filter((n) => n.folder?._id === folder) : notes;
+            const { folder, sender, search } = config?.params ?? {};
+            let list = notes;
+            if (folder) list = list.filter((n) => n.folder?._id === folder);
+            if (sender) list = list.filter((n) => n.senderId === sender);
+            // Stand-in for the $text index: OR across terms, sender + summary.
+            if (search) {
+                const terms = search.toLowerCase().split(/\s+/).filter(Boolean);
+                list = list.filter((n) =>
+                    terms.some((t) => `${n.sender} ${n.summary}`.toLowerCase().includes(t))
+                );
+            }
             return Promise.resolve({ data: { notes: list } });
         }
         if (url === '/waha/status') return Promise.resolve({ data: { status } });
         return Promise.reject(new Error(`unexpected GET ${url}`));
     });
 }
+
+/** The sender name now appears in both a card and the contacts rail. */
+const contactsRail = () => within(screen.getByRole('navigation', { name: /contacts/i }));
+const cards = () => screen.queryAllByRole('article');
+const cardFor = (sender) => cards().find((c) => within(c).queryByText(sender)) ?? null;
+const findCardFor = (sender) => waitFor(() => expect(cardFor(sender)).toBeTruthy());
 
 function renderDashboard(path = '/dashboard') {
     const { user } = seedSession({ id: 'u1', name: 'Ada', email: 'ada@example.com' });
@@ -70,13 +102,59 @@ describe('Dashboard', () => {
         expect(await sidebar.findByRole('button', { name: /^work/i })).toBeInTheDocument();
         expect(sidebar.getByRole('button', { name: /^family/i })).toBeInTheDocument();
 
-        expect(await screen.findByText('Omar Hassan')).toBeInTheDocument();
-        expect(screen.getByText('Mariam')).toBeInTheDocument();
-        expect(screen.getByText('Mama')).toBeInTheDocument();
+        await findCardFor('Omar Hassan');
+        expect(cardFor('Mariam')).toBeTruthy();
+        expect(cardFor('Mama')).toBeTruthy();
         expect(screen.getByText('4:32')).toBeInTheDocument(); // 272s
-        expect(screen.getAllByRole('article')).toHaveLength(3);
+        expect(cards()).toHaveLength(3);
         expect(screen.getByText(/3 notes · 2 folders/i)).toBeInTheDocument();
         expect(screen.getAllByText(/whatsapp linked/i).length).toBeGreaterThan(0); // mobile + desktop pills
+    });
+
+    it('groups senders into a contacts rail, falling back to the phone number when unnamed', async () => {
+        mockBackend();
+        renderDashboard();
+
+        const rail = contactsRail();
+        expect(await rail.findByRole('button', { name: /omar hassan/i })).toBeInTheDocument();
+        expect(rail.getByRole('button', { name: /mariam/i })).toBeInTheDocument();
+        // No notifyName ever arrived for this one — it must read as a number,
+        // never as an empty row.
+        expect(rail.getByRole('button', { name: /\+201005555555/ })).toBeInTheDocument();
+        expect(rail.queryByText(/unknown contact/i)).toBeNull();
+    });
+
+    it('filters the grid by contact and re-queries with ?sender=', async () => {
+        mockBackend();
+        const user = userEvent.setup();
+        renderDashboard();
+        await findCardFor('Omar Hassan');
+
+        await user.click(contactsRail().getByRole('button', { name: /mariam/i }));
+
+        await waitFor(() => expect(cards()).toHaveLength(1));
+        expect(cardFor('Mariam')).toBeTruthy();
+        expect(cardFor('Omar Hassan')).toBeNull();
+        expect(api.get).toHaveBeenCalledWith('/notes', expect.objectContaining({ params: { sender: '201119876543@c.us' } }));
+
+        // The chip is the way back for anyone whose sidebar is off-screen.
+        await user.click(screen.getByRole('button', { name: /clear contact filter/i }));
+        await waitFor(() => expect(cards()).toHaveLength(3));
+    });
+
+    it('runs the debounced deep search against the backend and marks the hits', async () => {
+        mockBackend();
+        const user = userEvent.setup();
+        renderDashboard();
+        await findCardFor('Omar Hassan');
+
+        await user.type(screen.getByRole('searchbox', { name: /search notes/i }), 'deposit');
+
+        await waitFor(() =>
+            expect(api.get).toHaveBeenCalledWith('/notes', expect.objectContaining({ params: { search: 'deposit' } }))
+        );
+        await waitFor(() => expect(cards()).toHaveLength(1));
+        expect(within(cards()[0]).getByText('deposit').tagName).toBe('MARK');
     });
 
     it('filters notes by folder via the URL search param and re-queries the API', async () => {
@@ -88,28 +166,28 @@ describe('Dashboard', () => {
         await user.click(await sidebar.findByRole('button', { name: /^family/i }));
 
         expect(await screen.findByRole('heading', { level: 2, name: 'Family' })).toBeInTheDocument();
-        await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(1));
-        expect(screen.getByText('Mama')).toBeInTheDocument();
-        expect(screen.queryByText('Omar Hassan')).not.toBeInTheDocument();
+        await waitFor(() => expect(cards()).toHaveLength(1));
+        expect(cardFor('Mama')).toBeTruthy();
+        expect(cardFor('Omar Hassan')).toBeNull();
         expect(api.get).toHaveBeenCalledWith('/notes', expect.objectContaining({ params: { folder: 'f2' } }));
     });
 
     it('starts on a folder when the URL already has ?folder=', async () => {
         mockBackend();
         renderDashboard('/dashboard?folder=f1');
-        await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2));
+        await waitFor(() => expect(cards()).toHaveLength(2));
         expect(screen.getByRole('heading', { level: 2, name: 'Work' })).toBeInTheDocument();
     });
 
-    it('searches across sender and summary client-side', async () => {
+    it('narrows the grid on the very first keystroke, before the debounce fires', async () => {
         mockBackend();
         const user = userEvent.setup();
         renderDashboard();
-        await screen.findByText('Omar Hassan');
+        await findCardFor('Omar Hassan');
 
         await user.type(screen.getByRole('searchbox', { name: /search notes/i }), 'venue');
-        expect(screen.getAllByRole('article')).toHaveLength(1);
-        expect(screen.getByText('Mariam')).toBeInTheDocument();
+        expect(cards()).toHaveLength(1);
+        expect(cardFor('Mariam')).toBeTruthy();
 
         await user.clear(screen.getByRole('searchbox', { name: /search notes/i }));
         await user.type(screen.getByRole('searchbox', { name: /search notes/i }), 'zzzz');
@@ -120,7 +198,7 @@ describe('Dashboard', () => {
         mockBackend();
         const user = userEvent.setup();
         renderDashboard();
-        await screen.findByText('Mama');
+        await findCardFor('Mama');
 
         expect(screen.queryByText(/bring the good plates from the top shelf/i)).not.toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: /show more/i }));
@@ -138,7 +216,15 @@ describe('Dashboard', () => {
 
         mockBackend();
         await user.click(within(alert).getByRole('button', { name: /try again/i }));
-        expect(await screen.findByText('Omar Hassan')).toBeInTheDocument();
+        await findCardFor('Omar Hassan');
+    });
+
+    it('keeps the rest of the library usable when the contacts endpoint fails', async () => {
+        mockBackend({ failContacts: true });
+        renderDashboard();
+
+        await findCardFor('Omar Hassan');
+        expect(await contactsRail().findByText(/contacts unavailable/i)).toBeInTheDocument();
     });
 
     it('raises a toast with a retry action when folders fail to load, never alert()', async () => {
@@ -157,7 +243,7 @@ describe('Dashboard', () => {
     });
 
     it('points unlinked users to /connect from the connection pill and the empty state', async () => {
-        mockBackend({ notes: [], status: 'SCAN_QR_CODE' });
+        mockBackend({ notes: [], contacts: [], status: 'SCAN_QR_CODE' });
         renderDashboard();
 
         expect(await screen.findByText(/quiet in here/i)).toBeInTheDocument();
@@ -170,12 +256,13 @@ describe('Dashboard', () => {
         mockBackend();
         const user = userEvent.setup();
         renderDashboard();
-        await screen.findByText('Omar Hassan');
+        await findCardFor('Omar Hassan');
 
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: /^folders$/i }));
         const dialog = await screen.findByRole('dialog');
         expect(within(dialog).getByRole('heading', { name: /folders/i })).toBeInTheDocument();
+        expect(within(dialog).getByRole('heading', { name: /contacts/i })).toBeInTheDocument();
         expect(within(dialog).getByRole('button', { name: /^family/i })).toBeInTheDocument();
 
         await user.keyboard('{Escape}');
@@ -186,13 +273,13 @@ describe('Dashboard', () => {
         mockBackend();
         const user = userEvent.setup();
         renderDashboard();
-        await screen.findByText('Omar Hassan');
+        await findCardFor('Omar Hassan');
 
         await user.click(screen.getByRole('button', { name: /^folders$/i }));
         const dialog = await screen.findByRole('dialog');
         await user.click(within(dialog).getByRole('button', { name: /^work/i }));
 
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-        await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2));
+        await waitFor(() => expect(cards()).toHaveLength(2));
     });
 });

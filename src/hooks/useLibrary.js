@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../services/api';
+import { contactHandle } from '../components/format';
 
 /**
  * Endpoint assumptions (single place to change if the backend differs):
- *   GET /api/folders           → Folder[]  | { folders: Folder[] } | { data: Folder[] }
- *   GET /api/notes?folder=<id> → Note[]    | { notes: Note[] }     | { data: Note[] }
+ *   GET /api/folders                     → Folder[]   | { folders: Folder[] }   | { data: Folder[] }
+ *   GET /api/notes/contacts              → Contact[]  | { contacts: Contact[] } | { data: Contact[] }
+ *   GET /api/notes?folder=&sender=&search=
+ *                                        → Note[]     | { notes: Note[] }       | { data: Note[] }
  */
 export const ENDPOINTS = {
     folders: '/folders',
     notes: '/notes',
+    contacts: '/notes/contacts',
 };
+
+/** How long the search box stays quiet before it hits the deep-search API. */
+export const SEARCH_DEBOUNCE_MS = 220;
 
 export function unwrapList(payload, keys = []) {
     if (Array.isArray(payload)) return payload;
@@ -29,20 +36,70 @@ export function normalizeFolder(raw) {
     };
 }
 
+/**
+ * A contact row for the sidebar rail.
+ *
+ * The name fallback chain is duplicated from the backend on purpose: the API
+ * already resolves `name`, but a cached/offline payload (or a future consumer
+ * that only stores `senderName`) must not render an empty row.
+ */
+export function normalizeContact(raw) {
+    const id = String(raw.senderId ?? raw.id ?? raw._id ?? '');
+    const handle = contactHandle(id);
+    const known = (raw.name ?? raw.senderName ?? raw.pushName ?? '').trim();
+    const name = known || handle || 'Unknown Contact';
+
+    return {
+        id,
+        name,
+        // Only worth a second line when it says something the name does not.
+        handle: handle && handle !== name ? handle : null,
+        count: raw.count ?? raw.noteCount ?? null,
+        lastNoteAt: raw.lastNoteAt ?? raw.lastAt ?? raw.updatedAt ?? null,
+    };
+}
+
 export function normalizeNote(raw) {
     const folder = raw.folder ?? raw.folderId ?? null;
+    const senderId = raw.senderId ?? null;
     return {
         id: String(raw._id ?? raw.id),
         title: raw.title ?? null,
         summary: raw.summary ?? raw.text ?? raw.content ?? '',
         transcript: raw.transcript ?? raw.transcription ?? null,
-        sender: raw.sender ?? raw.from ?? raw.contact ?? raw.pushName ?? 'Unknown',
+        sender:
+            raw.sender ??
+            raw.senderName ??
+            raw.from ??
+            raw.contact ??
+            raw.pushName ??
+            contactHandle(senderId) ??
+            'Unknown Contact',
+        senderId: senderId ? String(senderId) : null,
         durationSec: raw.durationSec ?? raw.duration ?? raw.seconds ?? null,
         createdAt: raw.createdAt ?? raw.timestamp ?? raw.date ?? null,
         folderId: folder && typeof folder === 'object' ? String(folder._id ?? folder.id) : folder ? String(folder) : null,
         folderName: folder && typeof folder === 'object' ? folder.name : raw.folderName ?? null,
         tags: Array.isArray(raw.tags) ? raw.tags : [],
+        score: raw.score ?? null,
     };
+}
+
+/**
+ * Trailing-edge debounce. Returns `value` only once it has stopped changing
+ * for `delay` ms, so the search box can stay perfectly responsive while the
+ * network sees one request per pause rather than one per keystroke.
+ */
+export function useDebouncedValue(value, delay = SEARCH_DEBOUNCE_MS) {
+    const [settled, setSettled] = useState(value);
+
+    useEffect(() => {
+        if (value === settled) return undefined;
+        const t = setTimeout(() => setSettled(value), delay);
+        return () => clearTimeout(t);
+    }, [value, delay, settled]);
+
+    return settled;
 }
 
 function useResource(fetcher, deps, { enabled = true } = {}) {
@@ -91,19 +148,65 @@ export function useFolders({ client = api, enabled = true } = {}) {
     return { folders: data ?? [], error, loading, refresh };
 }
 
-export function useVoiceNotes({ client = api, folderId = null, enabled = true } = {}) {
+/**
+ * Unique senders across the tenant's notes, newest conversation first.
+ * Sorted client-side too, so the rail order is stable even if a future backend
+ * returns them unordered.
+ */
+export function useContacts({ client = api, enabled = true } = {}) {
     const { data, error, loading, refresh } = useResource(
         async (signal) => {
-            const params = folderId ? { folder: folderId } : undefined;
-            const res = await client.get(ENDPOINTS.notes, { signal, params });
-            return unwrapList(res?.data, ['notes', 'voiceNotes']).map(normalizeNote);
+            const res = await client.get(ENDPOINTS.contacts, { signal });
+            return unwrapList(res?.data, ['contacts', 'senders']).map(normalizeContact);
         },
-        [client, folderId],
+        [client],
         { enabled }
     );
-    const notes = useMemo(
-        () => (data ?? []).slice().sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0)),
-        [data]
+
+    const contacts = useMemo(() => {
+        const rows = (data ?? []).filter((c) => c.id);
+        return rows
+            .slice()
+            .sort((a, b) => new Date(b.lastNoteAt ?? 0) - new Date(a.lastNoteAt ?? 0) || a.name.localeCompare(b.name));
+    }, [data]);
+
+    return { contacts, error, loading, refresh };
+}
+
+/**
+ * Notes for the current filter set.
+ *
+ * `search` is expected to be *already debounced* by the caller — this hook
+ * fires a request whenever it changes. When the backend is doing the
+ * searching, results arrive ranked by relevance, so we only re-sort by date
+ * when no search is active.
+ */
+export function useVoiceNotes({ client = api, folderId = null, senderId = null, search = '', enabled = true } = {}) {
+    const term = typeof search === 'string' ? search.trim() : '';
+
+    const { data, error, loading, refresh } = useResource(
+        async (signal) => {
+            const params = {};
+            if (folderId) params.folder = folderId;
+            if (senderId) params.sender = senderId;
+            if (term) params.search = term;
+
+            const res = await client.get(ENDPOINTS.notes, {
+                signal,
+                ...(Object.keys(params).length ? { params } : {}),
+            });
+            return unwrapList(res?.data, ['notes', 'voiceNotes']).map(normalizeNote);
+        },
+        [client, folderId, senderId, term],
+        { enabled }
     );
+
+    const notes = useMemo(() => {
+        const rows = data ?? [];
+        // Relevance order is the point of a text search – don't clobber it.
+        if (term) return rows;
+        return rows.slice().sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
+    }, [data, term]);
+
     return { notes, error, loading, refresh };
 }

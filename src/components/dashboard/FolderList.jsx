@@ -52,14 +52,26 @@ function Row({ active, icon: Icon, label, count, onClick, layoutGroup }) {
 /**
  * "All notes" + folder rows with a shared-layout active indicator that slides
  * between rows. `layoutGroup` must differ per instance (sidebar vs drawer).
+ *
+ * `suspended` blanks the active indicator entirely. The Contacts rail owns the
+ * selection while a contact filter is on, and two lit-up rows in one sidebar
+ * would read as two active filters.
  */
-export default function FolderList({ folders = [], activeId = null, onSelect, loading = false, totalCount, layoutGroup = 'folders' }) {
+export default function FolderList({
+    folders = [],
+    activeId = null,
+    onSelect,
+    loading = false,
+    totalCount,
+    suspended = false,
+    layoutGroup = 'folders',
+}) {
     return (
         <nav aria-label="Folders">
             <ul className="flex flex-col gap-0.5">
                 <Row
                     layoutGroup={layoutGroup}
-                    active={activeId == null}
+                    active={!suspended && activeId == null}
                     icon={Inbox}
                     label="All notes"
                     count={totalCount ?? null}
@@ -67,7 +79,7 @@ export default function FolderList({ folders = [], activeId = null, onSelect, lo
                 />
             </ul>
 
-            <p className="eyebrow mb-2 mt-6 px-3">Folders</p>
+            <h3 className="eyebrow mb-2 mt-6 px-3">Folders</h3>
 
             {loading && folders.length === 0 ? (
                 <ul className="flex flex-col gap-1.5 px-3" aria-hidden="true">
@@ -88,7 +100,7 @@ export default function FolderList({ folders = [], activeId = null, onSelect, lo
                         <Row
                             key={f.id}
                             layoutGroup={layoutGroup}
-                            active={activeId === f.id}
+                            active={!suspended && activeId === f.id}
                             icon={Folder}
                             label={f.name}
                             count={f.count}
