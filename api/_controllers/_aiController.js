@@ -109,13 +109,12 @@ async function generateSummary(mimeType, base64Data) {
     const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite' });
 
     const prompt = [
-        'Listen to the audio and identify the language being spoken.',
-        'Transcribe it and summarize it.',
-        'You MUST respond entirely in the ORIGINAL LANGUAGE spoken in the audio — never in English unless the audio itself is in English.',
+        'Listen to the audio and transcribe and summarize it.',
+        'If the audio contains Arabic, you MUST respond entirely in the Egyptian Arabic dialect (Egyptian accent). Do NOT use Modern Standard Arabic (Fusha).',
         '',
         'Return your response as a strict JSON object with exactly two keys:',
-        '  "transcript" — the verbatim words spoken, in the original language.',
-        '  "summary"    — a concise summary (2–5 sentences) of the main point, in the original language.',
+        '  "transcript" : the verbatim words spoken, written in Egyptian Arabic.',
+        '  "summary"    : a concise summary (2-5 sentences) of the main point, in Egyptian Arabic.',
         '',
         'Rules:',
         '  - Do NOT wrap the response in markdown code blocks like ```json.',
@@ -124,7 +123,7 @@ async function generateSummary(mimeType, base64Data) {
         '  - If the audio is inaudible or empty, set both values to an empty string.',
         '',
         'Respond with ONLY the JSON object. Example:',
-        '{"transcript":"…verbatim words in original language…","summary":"…concise summary in original language…"}',
+        '{"transcript":" verbatim words in Egyptian Arabic ","summary":" concise summary in Egyptian Arabic "}',
     ].join('\n');
 
 

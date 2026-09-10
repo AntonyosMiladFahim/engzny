@@ -253,7 +253,7 @@ export default function Dashboard() {
      * This means a global-search session (query present, no sender/folder)
      * keeps the search bar rendered even though `inChatTimeline` is false.
      */
-    const inChatTimeline = Boolean(senderId || folderId);
+    const inChatTimeline = Boolean(senderId || folderId || query.trim());
     const showSearch     = inChatTimeline || Boolean(query.trim()) || isSearchOpen;
 
     const scopeLabel = activeContact
