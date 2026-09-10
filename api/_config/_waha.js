@@ -159,6 +159,44 @@ async function getQrCode(sessionName) {
     });
 }
 
+/**
+ * POST /api/sendText – send a text message via a specific session.
+ * @returns {Promise<object>}
+ */
+async function sendText(sessionName, chatId, text) {
+    return call(async (http) => {
+        const res = await http.post(`/api/sendText`, {
+            session: sessionName,
+            chatId,
+            text,
+        });
+        return unwrap(res, [200, 201]);
+    });
+}
+
+/**
+ * GET /api/{session}/messages/{id}/download – download media as buffer.
+ * Returns the buffer and content type.
+ */
+async function downloadMedia(sessionName, messageId) {
+    return call(async (http) => {
+        const res = await http.get(`/api/${encodeURIComponent(sessionName)}/messages/${encodeURIComponent(messageId)}/download`, {
+            responseType: 'arraybuffer'
+        });
+        if (res.status === 200) {
+            return {
+                mimetype: res.headers['content-type'] || 'audio/ogg',
+                buffer: Buffer.from(res.data)
+            };
+        }
+        throw new WahaError(
+            `[waha] Failed to download media ${messageId}`,
+            res.status,
+            res.data
+        );
+    });
+}
+
 module.exports = {
     SessionStatus,
     WahaError,
@@ -166,4 +204,6 @@ module.exports = {
     createSession,
     startSession,
     getQrCode,
+    sendText,
+    downloadMedia,
 };
