@@ -1,4 +1,24 @@
-import React, { useState } from 'react';
+/**
+ * src/components/dashboard/NotesGrid.jsx
+ * ------------------------------------------------------------------
+ * Auto-fill grid of NoteCard components.
+ *
+ * `pending` is true while the deep-search request for the *current* query is
+ * still in flight. Rather than tearing the list down and replaying a skeleton
+ * (which would make every keystroke feel like a page load), the whole grid
+ * dips in opacity and picks up a 2px blur — the results underneath stay
+ * readable, stay interactive, and simply re-focus when the answer lands.
+ * Nothing unmounts, so cards that survive the new query never re-enter.
+ *
+ * Optimistic deletion: `localNotes` mirrors the `notes` prop but allows
+ * individual cards to be removed immediately when the user confirms a delete.
+ * The prop is the source of truth; whenever it changes (new fetch, filter
+ * change) the local list resets. This means a failed delete is automatically
+ * corrected on the next fetch without extra logic.
+ * ------------------------------------------------------------------
+ */
+
+import React, { useEffect, useCallback, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Mic, RefreshCw } from 'lucide-react';
@@ -36,11 +56,11 @@ function EmptyState({ query, linked, contactName }) {
                 search everyone.
             </>
         ) : (
-            'Try a sender’s name or a word from the summary.'
+            "Try a sender's name or a word from the summary."
         )
     ) : contactName ? (
         <>
-            <span className="text-fog-200">{contactName}</span> hasn’t sent a voice note since you linked WhatsApp.
+            <span className="text-fog-200">{contactName}</span> hasn't sent a voice note since you linked WhatsApp.
         </>
     ) : linked ? (
         'Forward a voice note to your linked number and the summary will appear here.'
@@ -78,7 +98,7 @@ function EmptyState({ query, linked, contactName }) {
 function ErrorState({ error, onRetry }) {
     return (
         <div role="alert" className="mx-auto flex max-w-[460px] flex-col items-center rounded-4xl border border-ember-400/20 bg-ember-500/[0.07] px-8 py-10 text-center shadow-hairline">
-            <p className="text-[16px] font-bold text-ember-200">Couldn’t load your notes</p>
+            <p className="text-[16px] font-bold text-ember-200">Couldn't load your notes</p>
             <p className="mt-2 text-[13.5px] leading-relaxed text-fog-300">{error?.message || 'The server did not respond.'}</p>
             <Button variant="ghost" icon={RefreshCw} onClick={onRetry} className="mt-5 h-10 w-auto px-4 text-[14px]">
                 Try again
@@ -89,13 +109,6 @@ function ErrorState({ error, onRetry }) {
 
 /**
  * Auto-fill grid: never fewer than 1 column, never a card narrower than 280px.
- *
- * `pending` is true while the deep-search request for the *current* query is
- * still in flight. Rather than tearing the list down and replaying a skeleton
- * (which would make every keystroke feel like a page load), the whole grid
- * dips in opacity and picks up a 2px blur — the results underneath stay
- * readable, stay interactive, and simply re-focus when the answer lands.
- * Nothing unmounts, so cards that survive the new query never re-enter.
  */
 export default function NotesGrid({
     notes,
@@ -108,14 +121,30 @@ export default function NotesGrid({
     pending = false,
     contactName = null,
     onSelectContact,
+    onDelete: onDeleteProp,
 }) {
     const reduce = useReducedMotion();
     const [expandedId, setExpandedId] = useState(null);
 
+    // ── Optimistic deletion ────────────────────────────────────────────────
+    // Mirror the incoming notes prop; removing an item here immediately hides
+    // the card without waiting for a re-fetch. The prop is authoritative — any
+    // change to it (new search, filter, refetch) resets the local list, which
+    // automatically restores a card if the API call failed silently.
+    const [localNotes, setLocalNotes] = useState(notes);
+    useEffect(() => {
+        setLocalNotes(notes);
+    }, [notes]);
+
+    const handleDelete = useCallback((id) => {
+        setLocalNotes((prev) => prev.filter((n) => n.id !== id));
+        onDeleteProp?.(id);
+    }, [onDeleteProp]);
+
     let body;
-    if (error && notes.length === 0) {
+    if (error && localNotes.length === 0) {
         body = <ErrorState error={error} onRetry={onRetry} />;
-    } else if (loading && notes.length === 0) {
+    } else if (loading && localNotes.length === 0) {
         body = (
             <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))]" aria-busy="true" aria-label="Loading notes">
                 {Array.from({ length: 6 }).map((_, i) => (
@@ -123,7 +152,7 @@ export default function NotesGrid({
                 ))}
             </div>
         );
-    } else if (notes.length === 0) {
+    } else if (localNotes.length === 0) {
         body = <EmptyState query={query} linked={linked} contactName={contactName} />;
     } else {
         body = (
@@ -134,7 +163,7 @@ export default function NotesGrid({
                 variants={reduce ? undefined : stagger(0.02, 0.035)}
                 className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))]"
             >
-                {notes.map((n) => (
+                {localNotes.map((n) => (
                     <NoteCard
                         key={n.id}
                         note={n}
@@ -142,6 +171,7 @@ export default function NotesGrid({
                         expanded={expandedId === n.id}
                         onToggle={() => setExpandedId((cur) => (cur === n.id ? null : n.id))}
                         onSelectContact={onSelectContact}
+                        onDelete={handleDelete}
                     />
                 ))}
             </motion.div>

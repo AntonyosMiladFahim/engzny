@@ -6,6 +6,7 @@
  *   POST /api/waha/webhook  – WAHA event webhook  (PUBLIC  – HMAC-guarded)
  *   POST /api/waha/pair     – create/start session, return pairing code (auth)
  *   GET  /api/waha/status   – connection state of the caller's session   (auth)
+ *   GET  /api/waha/chats    – active chats list for the share-routing modal (auth)
  *
  * The webhook is intentionally unauthenticated because WAHA is an automated
  * service and does not carry a user JWT. It is secured instead by an
@@ -38,5 +39,6 @@ router.post('/webhook', wahaController.wahaWebhook);
 
 router.post('/pair', requireAuth, wahaController.requestPairingCode);
 router.get('/status', requireAuth, wahaController.checkStatus);
+router.get('/chats', requireAuth, wahaController.getChats);
 
 module.exports = router;
