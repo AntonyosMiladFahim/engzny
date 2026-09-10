@@ -21,6 +21,8 @@
  * ------------------------------------------------------------------
  */
 
+const crypto = require('crypto');
+
 const User = require('../_models/_User');
 const connectDB = require('../_config/_db');
 const waha = require('../_config/_waha');
@@ -185,7 +187,102 @@ async function checkStatus(req, res) {
     }
 }
 
+/**
+ * POST /api/waha/webhook  (PUBLIC – HMAC-SHA256 guarded)
+ *
+ * WAHA calls this endpoint for every WhatsApp event on every session managed
+ * by this server. The handler contract, in strict order:
+ *
+ *  1. Respond 200 OK IMMEDIATELY — before any async work.
+ *     WAHA treats any non-2xx (or a slow response) as a delivery failure and
+ *     retries up to 15 times. We must acknowledge receipt at once.
+ *
+ *  2. Verify the HMAC-SHA256 signature when WAHA_WEBHOOK_HMAC_KEY is set.
+ *     WAHA signs the raw request body with the shared key and places the hex
+ *     digest in the  x-webhook-hmac  header. If the digests do not match we
+ *     log a warning and drop the event silently (the 200 has already gone out,
+ *     so WAHA will not retry — which is the desired behaviour for a forged
+ *     payload).
+ *
+ *  3. Delegate voice-note processing to the AI controller asynchronously
+ *     (fire-and-forget after the response). Any error there is logged but does
+ *     not affect the acknowledged 200.
+ *
+ * Security note: when WAHA_WEBHOOK_HMAC_KEY is absent (local dev without a
+ * shared secret) the signature check is skipped so developers can test with
+ * plain curl / Postman without configuring the env var.
+ */
+async function wahaWebhook(req, res) {
+    // ── Step 1: respond immediately so WAHA stops waiting ─────────────────
+    res.status(200).send('OK');
+
+    // ── Step 2: log the incoming event for Vercel log visibility ──────────
+    const { event, session } = req.body || {};
+    console.log('Webhook Event Received:', event, '| session:', session);
+
+    // ── Step 3: HMAC-SHA256 signature verification ─────────────────────────
+    const hmacKey = process.env.WAHA_WEBHOOK_HMAC_KEY;
+    if (hmacKey) {
+        const incomingSignature = req.headers['x-webhook-hmac'];
+        if (!incomingSignature) {
+            console.warn('[waha/webhook] HMAC key configured but x-webhook-hmac header missing — dropping event');
+            return;
+        }
+
+        // req.rawBody is the raw Buffer set by the express.json verify callback
+        // in api/index.js. Using the raw bytes guarantees the digest matches
+        // exactly what WAHA signed, regardless of JSON key ordering.
+        const rawBody = req.rawBody;
+        if (!rawBody) {
+            console.warn('[waha/webhook] req.rawBody not available — cannot verify HMAC, dropping event');
+            return;
+        }
+
+        const expectedSignature = crypto
+            .createHmac('sha256', hmacKey)
+            .update(rawBody)
+            .digest('hex');
+
+        // Use timingSafeEqual to prevent timing-based signature oracle attacks.
+        const incoming = Buffer.from(incomingSignature, 'hex');
+        const expected = Buffer.from(expectedSignature, 'hex');
+
+        const signaturesMatch =
+            incoming.length === expected.length &&
+            crypto.timingSafeEqual(incoming, expected);
+
+        if (!signaturesMatch) {
+            console.warn('[waha/webhook] HMAC signature mismatch — dropping event (possible forged payload)');
+            return;
+        }
+    }
+
+    // ── Step 4: delegate payload processing (async, fire-and-forget) ──────
+    // Only handle 'message' events that carry media (voice notes).
+    if (event !== 'message') return;
+
+    const payload = req.body?.payload;
+    if (!payload?.hasMedia) return;
+
+    // Process asynchronously — do NOT await here; the response is already sent.
+    setImmediate(async () => {
+        try {
+            const { wahaWebhook: processWebhook } = require('./_aiController');
+            // Re-invoke the AI controller's webhook processor with a synthetic
+            // request / response pair so we reuse all the AI + DB logic there.
+            await processWebhook(
+                { body: req.body },
+                // Provide a no-op response shim — the real response is already sent.
+                { status: () => ({ send: () => {} }) }
+            );
+        } catch (err) {
+            console.error('[waha/webhook] async processing failed:', err.message);
+        }
+    });
+}
+
 module.exports = {
+    wahaWebhook,
     requestPairingCode,
     checkStatus,
     // Exported for unit tests.

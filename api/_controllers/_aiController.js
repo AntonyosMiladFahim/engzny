@@ -21,8 +21,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy-key');
  * Helper to call Gemini API and summarize the audio buffer.
  */
 async function generateSummary(mimeType, base64Data) {
-    // Note: 'gemini-3.6-flash' is the requested model
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+    // gemini-1.5-flash: fast, cheap, supports inline audio up to ~9 MB
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     const prompt = 'Please concisely transcribe and summarize this voice note.';
     
     const result = await model.generateContent([

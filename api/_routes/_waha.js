@@ -3,12 +3,17 @@
  * ------------------------------------------------------------------
  * WhatsApp (WAHA) session routes. Mounted at /api/waha in api/index.js.
  *
- *   POST /api/waha/pair   – create/start the caller's session, return pairing code
- *   GET /api/waha/status  – connection state of the caller's session
+ *   POST /api/waha/webhook  – WAHA event webhook  (PUBLIC  – HMAC-guarded)
+ *   POST /api/waha/pair     – create/start session, return pairing code (auth)
+ *   GET  /api/waha/status   – connection state of the caller's session   (auth)
  *
- * Both routes require a Bearer token. Note there is deliberately NO
- * `/:session` parameter anywhere: the session is always derived from the
- * authenticated user inside the controller.
+ * The webhook is intentionally unauthenticated because WAHA is an automated
+ * service and does not carry a user JWT. It is secured instead by an
+ * HMAC-SHA256 signature check (see wahaController.wahaWebhook).
+ *
+ * The pair and status routes are protected by requireAuth; the session name
+ * is always derived from the authenticated user inside the controller — it is
+ * NEVER taken from the request body or URL parameters.
  *
  * File is prefixed with `_` so Vercel does NOT treat it as an HTTP route.
  * ------------------------------------------------------------------
@@ -21,9 +26,17 @@ const requireAuth = require('../_middlewares/_authMiddleware');
 
 const router = express.Router();
 
-router.use(requireAuth);
+/* -------------------------------------------------------------------------- */
+/* PUBLIC — no JWT required. Security is handled inside the handler via HMAC. */
+/* -------------------------------------------------------------------------- */
 
-router.post('/pair', wahaController.requestPairingCode);
-router.get('/status', wahaController.checkStatus);
+router.post('/webhook', wahaController.wahaWebhook);
+
+/* -------------------------------------------------------------------------- */
+/* PROTECTED — valid Bearer token required for all routes below.              */
+/* -------------------------------------------------------------------------- */
+
+router.post('/pair', requireAuth, wahaController.requestPairingCode);
+router.get('/status', requireAuth, wahaController.checkStatus);
 
 module.exports = router;

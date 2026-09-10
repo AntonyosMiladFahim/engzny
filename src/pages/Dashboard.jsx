@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
-import { LogOut, Search, X } from 'lucide-react';
+import { Download, LogOut, Search, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useFolders, useVoiceNotes } from '../hooks/useLibrary';
 import useWahaPolling from '../hooks/useWahaPolling';
@@ -16,6 +16,7 @@ import ConnectionPill from '../components/dashboard/ConnectionPill';
 import UserChip from '../components/shell/UserChip';
 import { toast } from '../components/ui/toast';
 import { rise, riseSoft, stagger } from '../components/motion';
+import api from '../services/api';
 
 export default function Dashboard() {
     const { user, logout } = useAuth();
@@ -26,11 +27,75 @@ export default function Dashboard() {
 
     const [query, setQuery] = useState('');
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const [installable, setInstallable] = useState(() => !!window.engzny?.installPrompt);
+    const [uploading, setUploading] = useState(false);
     const searchRef = useRef(null);
+
+    // ── PWA install prompt ────────────────────────────────────────────────────
+    useEffect(() => {
+        const onInstallable = () => setInstallable(true);
+        const onInstalled = () => setInstallable(false);
+        window.addEventListener('pwa:installable', onInstallable);
+        window.addEventListener('pwa:installed', onInstalled);
+        return () => {
+            window.removeEventListener('pwa:installable', onInstallable);
+            window.removeEventListener('pwa:installed', onInstalled);
+        };
+    }, []);
 
     const foldersQ = useFolders();
     const notesQ = useVoiceNotes({ folderId });
     const waha = useWahaPolling({ interval: 30000, stopOnConnected: false });
+
+    // ── Share inbox drainer ──────────────────────────────────────────────────
+    // Uploads every file from the PWA share inbox (Web Share Target / file
+    // handlers) to /api/ai/upload, then refreshes the notes list.
+    const drainInbox = useCallback(async () => {
+        const inbox = window.engzny?.shareInbox;
+        if (!inbox) return;
+        let items;
+        try { items = await inbox.list(); } catch { return; }
+        const pending = items.filter((i) => i.status === 'pending');
+        if (!pending.length) return;
+
+        setUploading(true);
+        let succeeded = 0;
+        for (const item of pending) {
+            try {
+                const full = await inbox.take(item.id);
+                if (!full?.blob) continue;
+                // Convert Blob → base64
+                const buffer = await full.blob.arrayBuffer();
+                const base64 = btoa(
+                    new Uint8Array(buffer).reduce((s, b) => s + String.fromCharCode(b), '')
+                );
+                await api.post('/ai/upload', {
+                    audioBase64: base64,
+                    mimeType: full.type || 'audio/ogg',
+                });
+                await inbox.delete(item.id);
+                succeeded++;
+            } catch (err) {
+                console.error('[dashboard] upload failed for item', item.id, err);
+            }
+        }
+        setUploading(false);
+        if (succeeded > 0) {
+            notesQ.refresh();
+            toast.success(
+                succeeded === 1 ? 'Voice note summarised.' : `${succeeded} voice notes summarised.`,
+                { key: 'share-done', title: 'Done' }
+            );
+        }
+    }, [notesQ]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Drain on mount (in case app was reopened after a share) and on new shares.
+    useEffect(() => { drainInbox(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        const onShare = () => drainInbox();
+        window.addEventListener('share:received', onShare);
+        return () => window.removeEventListener('share:received', onShare);
+    }, [drainInbox]);
 
     const selectFolder = useCallback(
         (id) => {
@@ -156,6 +221,46 @@ export default function Dashboard() {
                         </div>
 
                         <motion.div variants={riseSoft} aria-hidden="true" className="h-px bg-gradient-to-r from-white/10 via-white/5 to-transparent" />
+
+                        {/* PWA install banner */}
+                        {installable && (
+                            <motion.div
+                                initial={{ opacity: 0, y: -8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex items-center justify-between gap-4 rounded-2xl bg-signal-400/[0.08] px-4 py-3 ring-1 ring-signal-400/20"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <Download className="h-4 w-4 shrink-0 text-signal-400" strokeWidth={1.75} />
+                                    <p className="text-[13.5px] text-fog-200">
+                                        Install engzny on your home screen to share voice notes directly from WhatsApp.
+                                    </p>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => window.engzny?.promptInstall()}
+                                        className="rounded-lg bg-signal-400 px-3 py-1.5 text-[12px] font-bold text-ink-950 hover:bg-signal-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400/60"
+                                    >
+                                        Install
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setInstallable(false)}
+                                        aria-label="Dismiss"
+                                        className="grid h-7 w-7 place-items-center rounded-md text-fog-500 hover:bg-white/[0.06] hover:text-fog-200"
+                                    >
+                                        <X className="h-3.5 w-3.5" strokeWidth={2.25} />
+                                    </button>
+                                </div>
+                            </motion.div>
+                        )}
+
+                        {/* Uploading indicator */}
+                        {uploading && (
+                            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-signal-400 animate-pulse">
+                                Summarising shared audio…
+                            </p>
+                        )}
                     </motion.header>
 
                     <motion.section
