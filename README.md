@@ -3,6 +3,9 @@
 # ⚡ Engzny (إنجزني)
 ### Production-Grade WhatsApp Voice Note Summarizer & Conversational Intelligence Platform
 
+[![Live Video Demo](https://img.shields.io/badge/▶_Live_Demo-Google_Drive-E50914?style=for-the-badge&logo=google-drive&logoColor=white)](https://drive.google.com/drive/folders/1U_hA4Rw0aUGXtDjMsyCafmS4k9f-YjlH?usp=drive_link)
+<br /><br />
+
 [![CI Gate](https://github.com/AntonyosMiladFahim/engzny/actions/workflows/ci.yml/badge.svg)](https://github.com/AntonyosMiladFahim/engzny/actions)
 [![Tests Passing](https://img.shields.io/badge/tests-95%20passed-success?style=flat-square&logo=jest)](https://github.com/AntonyosMiladFahim/engzny)
 [![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
@@ -21,13 +24,16 @@
 
 Built with **Node.js, Express, React 18, Google Gemini Multimodal Audio AI, MongoDB, and WAHA (WhatsApp HTTP API)**, Engzny bridges real-world messaging habits with enterprise-grade distributed systems architecture.
 
-[Explore Features](#-core-features--engineering-highlights) • [System Architecture](#-system-architecture) • [API Reference](#-api-reference) • [Quickstart Guide](#-quickstart--local-setup) • [Security & Isolation](#-security-tenancy--hardening)
+[🎬 Watch Video Demo](https://drive.google.com/drive/folders/1U_hA4Rw0aUGXtDjMsyCafmS4k9f-YjlH?usp=drive_link) • [Explore Features](#-core-features--engineering-highlights) • [System Architecture](#-system-architecture) • [API Reference](#-api-reference) • [Quickstart Guide](#-quickstart--local-setup) • [Security & Isolation](#-security-tenancy--hardening)
 
 ---
 
 </div>
 
 ## 📌 Executive Summary
+
+> [!TIP]
+> 🎥 **Live Video Demo**: Watch Engzny in action processing voice notes, performing bulk chat intelligence, and demonstrating WhatsApp device linking: **[Watch Demo on Google Drive](https://drive.google.com/drive/folders/1U_hA4Rw0aUGXtDjMsyCafmS4k9f-YjlH?usp=drive_link)**
 
 Modern messaging apps thrive on voice notes, but busy professionals, students, and operators suffer from "voice note fatigue" — losing hours listening to rambling, unstructured voice clips in meetings, noisy transit, or urgent situations.
 
@@ -499,14 +505,20 @@ Engzny is production-ready for deployment across modern cloud platforms:
 
 ---
 
-## 👨‍💻 Author
+## 👥 Engineering Team & Authors
 
-**Antonyos Milad Fahim**
-* GitHub: [@AntonyosMiladFahim](https://github.com/AntonyosMiladFahim)
-* Project Repository: [https://github.com/AntonyosMiladFahim/engzny](https://github.com/AntonyosMiladFahim/engzny)
+| Engineer | Profile | GitHub |
+| :--- | :--- | :--- |
+| **Antonyos Milad Fahim** | Full-Stack & System Architecture | [@AntonyosMiladFahim](https://github.com/AntonyosMiladFahim) |
+| **Philopater Essam** | Software Engineer | [@Philopater06](https://github.com/Philopater06) |
+| **Antoine Sobhy Soliman** | Software Engineer | [@antoine174](https://github.com/antoine174) |
+
+* **Project Repository**: [https://github.com/AntonyosMiladFahim/engzny](https://github.com/AntonyosMiladFahim/engzny)
+* **Live Video Demo**: [Google Drive Folder](https://drive.google.com/drive/folders/1U_hA4Rw0aUGXtDjMsyCafmS4k9f-YjlH?usp=drive_link)
 
 ---
 
 <div align="center">
   <sub>Built with precision, curiosity, and respect for engineering excellence.</sub>
 </div>
+
